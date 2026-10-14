@@ -18,7 +18,7 @@ func main() {
 	zerolog.TimeFieldFormat = time.RFC3339
 	log.Logger = zerolog.New(os.Stderr).With().Timestamp().Logger()
 
-	cfg, err := config.LoadConfig(".")
+	cfg, err := config.LoadConfig()
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to load config")
 	}

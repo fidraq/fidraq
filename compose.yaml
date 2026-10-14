@@ -1,40 +1,40 @@
-# Base compose file - shared between dev and prod
-# Dev: docker compose up (auto-loads compose.override.yaml)
-# Prod: docker compose -f compose.yaml -f compose.prod.yaml up
+# Local Postgres only. Everything else runs natively via mise (see mise.toml).
+
+name: saftaja
 
 services:
   db:
     image: postgres:18
+    ports:
+      - "5432:5432"
     environment:
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-      POSTGRES_USER: ${DB_USER}
-      POSTGRES_DB: ${DB_DATABASE}
+      POSTGRES_USER: saftaja
+      POSTGRES_PASSWORD: saftaja
+      POSTGRES_DB: saftaja
     volumes:
       - pgdata:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_DATABASE}"]
+      test: ["CMD-SHELL", "pg_isready -U saftaja -d saftaja"]
       interval: 5s
       timeout: 5s
       retries: 5
 
-  khazina:
-    depends_on:
-      db:
-        condition: service_healthy
+  # Throwaway database for `mise run test`, wiped on every restart.
+  testdb:
+    image: postgres:18
+    ports:
+      - "5433:5432"
     environment:
-      DB_HOST: db
-      DB_PORT: 5432
-      DB_DATABASE: ${DB_DATABASE}
-      DB_USER: ${DB_USER}
-      DB_PASSWORD: ${DB_PASSWORD}
-      PORT: ${PORT:-8080}
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
-      VERIFY_DOMAIN_SECRET: ${VERIFY_DOMAIN_SECRET}
-      ADMIN_API_KEY: ${ADMIN_API_KEY}
-      EMAILER: ${EMAILER}
-      RESEND_API_KEY: ${RESEND_API_KEY}
-      DOMAIN: ${DOMAIN}
-      JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY}
+      POSTGRES_USER: test_user
+      POSTGRES_PASSWORD: test_password
+      POSTGRES_DB: test_khazina
+    tmpfs:
+      - /var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test_user -d test_khazina"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
 volumes:
   pgdata:

@@ -1,4 +1,4 @@
-.env
+mise.local.toml
 http-client.private.env.json
-infra/hosts.yml
 *.pem
+.env

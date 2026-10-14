@@ -9,35 +9,19 @@ import (
 	"github.com/spf13/viper"
 )
 
+// Config is read from environment variables only.
 type Config struct {
-	DBHost             string `mapstructure:"DB_HOST"`
-	DBPort             uint16 `mapstructure:"DB_PORT"`
-	DBDatabase         string `mapstructure:"DB_DATABASE"`
-	DBUser             string `mapstructure:"DB_USER"`
-	DBPassword         string `mapstructure:"DB_PASSWORD"`
+	DatabaseURL        string `mapstructure:"DATABASE_URL"`
 	Port               int    `mapstructure:"PORT"`
 	EncryptionKey      string `mapstructure:"ENCRYPTION_KEY"`
 	VerifyDomainSecret string `mapstructure:"VERIFY_DOMAIN_SECRET"`
-	AdminAPIKey        string `mapstructure:"ADMIN_API_KEY"`
 	Emailer            string `mapstructure:"EMAILER"`
 	ResendAPIKey       string `mapstructure:"RESEND_API_KEY"`
-	Domain             string `mapstructure:"DOMAIN"`
+	DashboardURL       string `mapstructure:"DASHBOARD_URL"`
 	JWTPrivateKey      string `mapstructure:"JWT_PRIVATE_KEY"`
 }
 
-func LoadConfig(configPath string) (*Config, error) {
-	viper.SetConfigName(".env")
-	viper.SetConfigType("env")
-	viper.AddConfigPath(configPath)
-
-	if err := viper.ReadInConfig(); err != nil {
-		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
-			return nil, err
-		}
-
-		log.Warn().Err(err).Str("config_path", configPath).Msg("no .env file found, using environments variables only")
-	}
-
+func LoadConfig() (*Config, error) {
 	t := reflect.TypeOf(Config{})
 	for i := 0; i < t.NumField(); i++ {
 		if tag := t.Field(i).Tag.Get("mapstructure"); tag != "" {
@@ -63,20 +47,11 @@ func LoadConfig(configPath string) (*Config, error) {
 }
 
 func (c *Config) Validate() error {
-	if c.DBHost == "" {
-		return errors.New("DB_HOST is required")
+	if c.DatabaseURL == "" {
+		return errors.New("DATABASE_URL is required")
 	}
-	if c.DBPort == 0 {
-		return errors.New("DB_PORT is required")
-	}
-	if c.DBDatabase == "" {
-		return errors.New("DB_DATABASE is required")
-	}
-	if c.DBUser == "" {
-		return errors.New("DB_USER is required")
-	}
-	if c.DBPassword == "" {
-		return errors.New("DB_PASSWORD is required")
+	if c.DashboardURL == "" {
+		return errors.New("DASHBOARD_URL is required")
 	}
 	if c.Port == 0 {
 		return errors.New("PORT is required")

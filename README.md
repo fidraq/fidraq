@@ -16,47 +16,38 @@ dashboard, so you don't have to integrate MPGS by hand.
 | `diwan`   | Merchant dashboard (React + Vite)                           |
 | `bawaba`  | Landing page                                                |
 | `proto`   | Dashboard API definitions (Connect RPC), generated with buf |
-| `infra`   | Server provisioning                                         |
 
 ## Getting started
 
-You need [OrbStack](https://orbstack.dev) (or any Docker runtime) and
-[mise](https://mise.jdx.dev). mise installs everything else (Go, Bun, buf).
+You need [mise](https://mise.jdx.dev) and a Docker runtime such as
+[OrbStack](https://orbstack.dev) (only Postgres runs in Docker). mise installs
+every other tool at the pinned version.
 
 ```bash
-mise install
-cp .env.example .env
+mise install      # Go, Bun, buf, sqlc, templ, ...
+mise run setup    # generates your local secrets into mise.local.toml
+mise run dev      # Postgres + khazina + diwan, with hot reload
 ```
 
-Fill in the secrets in `.env`:
+| Service | URL                   |
+| ------- | --------------------- |
+| khazina | http://localhost:8080 |
+| diwan   | http://localhost:5173 |
 
-```bash
-openssl rand -base64 32                     # ENCRYPTION_KEY
-openssl rand -hex 16                        # VERIFY_DOMAIN_SECRET
-openssl genrsa 2048 | base64 | tr -d '\n'   # JWT_PRIVATE_KEY
-```
+Config lives in two places:
 
-Then start everything with hot reload:
+- `mise.toml`: dev defaults (database URL, ports, ...), committed.
+- `mise.local.toml`: your secrets, gitignored. Re-run `mise run setup` after
+  pulling; it only adds variables you don't have yet.
 
-```bash
-mise run dev
-```
-
-| Service   | URL                   |
-| --------- | --------------------- |
-| khazina   | http://localhost:8080 |
-| diwan     | http://localhost:5173 |
-| bawaba    | http://localhost:3000 |
-| Postgres  | localhost:5432        |
-
-Migrations run automatically when khazina starts.
+Production reads the same variable names from its own environment.
 
 ## Common tasks
 
 ```bash
 mise tasks                      # list everything
-mise run test                   # Go tests (starts a throwaway Postgres on :5433)
-mise run test:e2e               # Playwright e2e, needs khazina/tests/e2e/.env
+mise run test                   # Go tests (throwaway Postgres on :5433)
+mise run test:e2e               # Playwright e2e, needs MPGS test creds in mise.local.toml
 mise run gen                    # sqlc, templ, mockery, buf
 mise run lint
 mise run migrate:create <name>
@@ -64,4 +55,5 @@ mise run migrate:create <name>
 
 ## Deploying
 
-See [`infra/README.md`](infra/README.md).
+Each push to `main` publishes Docker images to
+`ghcr.io/rbconsult-bh/saftaja`. A Helm chart for self-hosting is coming.
