@@ -4,8 +4,13 @@ import { authInterceptor } from "./auth-interceptor";
 import { createClient } from "@connectrpc/connect";
 import { AuthService } from "../../gen/saftaja/dashboard/auth/v1/auth_pb";
 
+const apiUrl = import.meta.env.VITE_API_URL;
+if (!apiUrl) {
+  throw new Error("VITE_API_URL is not set");
+}
+
 const baseTransportOpts: ConnectTransportOptions = {
-  baseUrl: "http://localhost:8080",
+  baseUrl: apiUrl,
 };
 
 const nakedTransport = createConnectTransport(baseTransportOpts)

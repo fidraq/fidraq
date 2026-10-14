@@ -36,17 +36,13 @@ async function globalSetup() {
   const payContainer = await payImage
     .withNetwork(sharedNetwork)
     .withEnvironment({
-      DB_HOST: 'db',
-      DB_PORT: DB_CONFIG.port.toString(),
-      DB_DATABASE: DB_CONFIG.database,
-      DB_USER: DB_CONFIG.user,
-      DB_PASSWORD: DB_CONFIG.password,
+      DATABASE_URL: `postgres://${DB_CONFIG.user}:${DB_CONFIG.password}@db:${DB_CONFIG.port}/${DB_CONFIG.database}?sslmode=disable`,
       PORT: payPort.toString(),
       ENCRYPTION_KEY: encryptionKey,
       VERIFY_DOMAIN_SECRET: verifyDomainSecret,
       JWT_PRIVATE_KEY: jwtKey,
       EMAILER: 'stdout',
-      DOMAIN: 'localhost',
+      DASHBOARD_URL: 'http://localhost:5173',
     })
     .withExposedPorts(payPort)
     .withWaitStrategy(Wait.forHttp('/health', payPort))

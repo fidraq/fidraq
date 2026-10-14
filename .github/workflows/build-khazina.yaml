@@ -22,8 +22,3 @@ jobs:
     with:
       image_name: khazina
       context_path: ./khazina
-
-  deploy:
-    needs: build
-    uses: ./.github/workflows/deploy.yaml
-    secrets: inherit

@@ -14,7 +14,7 @@ jobs:
           go-version: "1.25.9"
 
       - name: Start test Postgres
-        run: docker compose -f compose.test.yaml up -d --wait testdb
+        run: docker compose up -d --wait testdb
 
       - name: Run tests
         working-directory: ./khazina
@@ -22,4 +22,4 @@ jobs:
 
       - name: Stop test Postgres
         if: always()
-        run: docker compose -f compose.test.yaml down
+        run: docker compose down testdb

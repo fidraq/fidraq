@@ -15,12 +15,12 @@ type Templates interface {
 }
 
 type templates struct {
-	domain string
+	dashboardURL string
 }
 
-func NewTemplates(domain string) Templates {
+func NewTemplates(dashboardURL string) Templates {
 	return &templates{
-		domain: domain,
+		dashboardURL: dashboardURL,
 	}
 }
 
@@ -31,12 +31,12 @@ func (t *templates) MagicLinkTemplate(token string) (*Template, error) {
 	
 Use the link below to login to your account, or create one if this is your first time:
 
-		Link: https://%s/magic-link?token=%s
+		Link: %s/magic-link?token=%s
 
 If you didn't request this email, you can ignore it safely :D
 
 Thanks,
-Your Friendly Saftaja Team`, subject, t.domain, token)
+Your Friendly Saftaja Team`, subject, t.dashboardURL, token)
 
 	return &Template{
 		Subject: subject,

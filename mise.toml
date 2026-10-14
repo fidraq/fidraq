@@ -1,18 +1,83 @@
-# Everything you need besides a Docker runtime (OrbStack, Docker Desktop, ...).
-# sqlc, templ and mockery are pinned in khazina/go.mod and run via `go tool`.
+# The one file for local development. Besides mise you only need a Docker runtime
+# (OrbStack, Docker Desktop, ...) for Postgres.
+#
+#   mise install && mise run setup && mise run dev
+#
+# Secrets live in mise.local.toml (gitignored, created by `mise run setup`).
 
 [tools]
 go = "1.25.9"
 bun = "1.4.3"
 buf = "1.73.0"
+watchexec = "2.8.0"
+sqlc = "1.30.0"
+"aqua:a-h/templ" = "0.3.943" # must match github.com/a-h/templ in khazina/go.mod (checked by check:templ)
+mockery = "3.7.0"
+"go:github.com/go-delve/delve/cmd/dlv" = "1.26.1"
+"aqua:golang-migrate/migrate" = "4.19.1"
+
+# Dev defaults only. Production sets the same variables in its own environment.
+[env]
+DATABASE_URL = "postgres://saftaja:saftaja@localhost:5432/saftaja?sslmode=disable"
+PORT = "8080"
+DASHBOARD_URL = "http://localhost:5173"
+EMAILER = "stdout"
+VITE_API_URL = "http://localhost:8080"
+
+# ---------------------------------------------------------------------------
+# setup
+# ---------------------------------------------------------------------------
+
+[tasks.setup]
+description = "Create or update mise.local.toml, adding any missing dev secrets"
+run = '''
+f=mise.local.toml
+if [ ! -f "$f" ]; then
+  printf '# Local secrets, never committed. Production gets these from its own environment.\n[env]\n' > "$f"
+fi
+
+# ensure KEY COMMAND [COMMENT]: add KEY with the output of COMMAND unless it's already set.
+ensure() {
+  grep -q "^$1 = " "$f" && return
+  [ -n "$3" ] && printf '\n# %s\n' "$3" >> "$f"
+  printf '%s = "%s"\n' "$1" "$(eval "$2")" >> "$f"
+  echo "added $1"
+}
+
+ensure ENCRYPTION_KEY "openssl rand -base64 32"
+ensure VERIFY_DOMAIN_SECRET "openssl rand -hex 16"
+ensure JWT_PRIVATE_KEY "openssl genrsa 2048 2>/dev/null | base64 | tr -d '\n'"
+ensure RESEND_API_KEY "true" 'Only needed with EMAILER = "resend"'
+ensure KHAZINA_TEST_MPGS_BASE_URL "echo https://credimax.gateway.mastercard.com" "MPGS test merchant, used by the e2e tests"
+ensure KHAZINA_TEST_MPGS_MERCHANT_ID "true"
+ensure KHAZINA_TEST_MPGS_API_PASSWORD "true"
+
+mise trust --quiet "$f"
+echo "$f is up to date"
+'''
 
 # ---------------------------------------------------------------------------
 # dev
 # ---------------------------------------------------------------------------
 
 [tasks.dev]
-description = "Run the full stack with hot reload (db, khazina, diwan, bawaba)"
-run = "docker compose up --watch"
+description = "Run Postgres, khazina and diwan with hot reload"
+depends = ["dev:khazina", "dev:diwan"]
+
+[tasks."dev:db"]
+description = "Start the dev Postgres on :5432"
+run = "docker compose up -d --wait db"
+
+[tasks."dev:khazina"]
+description = "Run khazina on :8080, restarting on changes"
+depends = ["dev:db", "check:templ"]
+dir = "khazina"
+run = "watchexec --restart --exts go,templ,sql --ignore '*_templ.go' -- 'templ generate && go run .'"
+
+[tasks."dev:diwan"]
+description = "Run diwan on :5173"
+dir = "diwan"
+run = ["bun install --frozen-lockfile", "bun run dev"]
 
 # ---------------------------------------------------------------------------
 # test
@@ -20,7 +85,7 @@ run = "docker compose up --watch"
 
 [tasks."test:db"]
 description = "Start the throwaway test Postgres on :5433"
-run = "docker compose -f compose.test.yaml up -d --wait testdb"
+run = "docker compose up -d --wait testdb"
 
 [tasks.test]
 description = "Run khazina unit/integration tests"
@@ -29,17 +94,13 @@ dir = "khazina"
 run = "go test ./... -count=1 -race"
 
 [tasks."test:e2e"]
-description = "Run Playwright e2e tests (needs khazina/tests/e2e/.env)"
+description = "Run Playwright e2e tests (needs MPGS test creds in mise.local.toml)"
 dir = "khazina/tests/e2e"
 run = [
   "bun install --frozen-lockfile",
   "bun playwright install chromium",
   "bun playwright test -j 1",
 ]
-
-[tasks."test:down"]
-description = "Stop the test Postgres"
-run = "docker compose -f compose.test.yaml down"
 
 # ---------------------------------------------------------------------------
 # codegen
@@ -48,17 +109,30 @@ run = "docker compose -f compose.test.yaml down"
 [tasks."gen:sql"]
 description = "Generate Go from SQL queries (sqlc)"
 dir = "khazina"
-run = "go tool sqlc generate"
+run = "sqlc generate"
+
+[tasks."check:templ"]
+description = "Fail if the templ CLI and the templ library in go.mod differ"
+dir = "khazina"
+run = '''
+lib=$(go list -m github.com/a-h/templ | awk '{print $2}')
+cli=$(templ version)
+if [ "$lib" != "$cli" ]; then
+  echo "templ mismatch: go.mod has $lib, mise has $cli. Update aqua:a-h/templ in mise.toml." >&2
+  exit 1
+fi
+'''
 
 [tasks."gen:templ"]
 description = "Generate Go from .templ files"
+depends = ["check:templ"]
 dir = "khazina"
-run = "go tool templ generate"
+run = "templ generate"
 
 [tasks."gen:mocks"]
 description = "Generate mocks (mockery)"
 dir = "khazina"
-run = "go tool mockery"
+run = "mockery"
 
 [tasks."gen:proto"]
 description = "Generate Go + TS from protos (buf)"
@@ -75,6 +149,7 @@ depends = ["gen:sql", "gen:templ", "gen:mocks", "gen:proto"]
 
 [tasks.lint]
 description = "go vet + diwan eslint"
+depends = ["check:templ"]
 run = [
   "cd khazina && go vet ./...",
   "cd diwan && bun install --frozen-lockfile && bun run lint",
@@ -87,12 +162,10 @@ run = [
 [tasks."migrate:create"]
 description = "Create a new migration: mise run migrate:create <name>"
 usage = 'arg "<name>"'
-run = "docker compose run --rm migrate create -ext sql -dir /migrations -seq ${usage_name}"
+dir = "khazina/internal/store/migrations"
+run = "migrate create -ext sql -dir . -seq ${usage_name}"
 
 [tasks."migrate:down"]
 description = "Roll back the last migration on the dev db"
-run = '''
-set -a; . ./.env; set +a
-docker compose run --rm migrate -path=/migrations \
-  -database "postgres://$DB_USER:$DB_PASSWORD@db:5432/$DB_DATABASE?sslmode=disable" down 1
-'''
+dir = "khazina/internal/store/migrations"
+run = 'migrate -path . -database "$DATABASE_URL" down 1'

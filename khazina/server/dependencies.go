@@ -49,8 +49,7 @@ func (d *dependencies) Cleanup() {
 }
 
 func InitDependencies(ctx context.Context, cfg *config.Config) (*dependencies, error) {
-	dsn := fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=disable",
-		cfg.DBUser, cfg.DBPassword, cfg.DBHost, cfg.DBPort, cfg.DBDatabase)
+	dsn := cfg.DatabaseURL
 
 	log.Info().Msg("running database migrations...")
 	if err := store.RunMigrations(dsn); err != nil {
@@ -86,7 +85,7 @@ func InitDependencies(ctx context.Context, cfg *config.Config) (*dependencies, e
 		return nil, err
 	}
 
-	emailTemplates := email.NewTemplates(cfg.Domain)
+	emailTemplates := email.NewTemplates(cfg.DashboardURL)
 
 	jwtIssuer, jwtVerifier, err := jwt.ParseJWTPrivateKey(cfg.JWTPrivateKey)
 	if err != nil {
