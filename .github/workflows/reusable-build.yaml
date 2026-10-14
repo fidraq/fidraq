@@ -21,10 +21,10 @@ on:
     outputs:
       image_digest:
         description: "Image digest"
-        value: ${{ jobs.build-and-push-image.outputs.digest }}
+        value: ${{ jobs.build.outputs.digest }}
       image_tag:
         description: "Full image tag"
-        value: ${{ jobs.build-and-push-image.outputs.tag }}
+        value: ${{ jobs.build.outputs.tag }}
 
 concurrency:
   group: build-${{ inputs.image_name }}-${{ github.ref }}
@@ -34,7 +34,7 @@ env:
   REGISTRY: ghcr.io
 
 jobs:
-  build-and-push-image:
+  build:
     runs-on: ubuntu-latest
     outputs:
       digest: ${{ steps.push.outputs.digest }}
