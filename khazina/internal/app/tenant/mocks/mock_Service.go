@@ -7,7 +7,7 @@ package mocks
 import (
 	"context"
 
-	"github.com/rbconsult-bh/saftaja/khazina/internal/app/tenant"
+	"github.com/saftaja-hq/saftaja/khazina/internal/app/tenant"
 	mock "github.com/stretchr/testify/mock"
 )
 

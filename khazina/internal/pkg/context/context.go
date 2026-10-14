@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
-	"github.com/rbconsult-bh/saftaja/khazina/internal/app/tenant"
+	"github.com/saftaja-hq/saftaja/khazina/internal/app/tenant"
 )
 
 type (

@@ -7,8 +7,8 @@ import (
 
 	"github.com/rs/zerolog/log"
 
-	"github.com/rbconsult-bh/saftaja/khazina/internal/app/payment"
-	"github.com/rbconsult-bh/saftaja/khazina/internal/transport/checkout/templfiles"
+	"github.com/saftaja-hq/saftaja/khazina/internal/app/payment"
+	"github.com/saftaja-hq/saftaja/khazina/internal/transport/checkout/templfiles"
 )
 
 type ErrorCode string

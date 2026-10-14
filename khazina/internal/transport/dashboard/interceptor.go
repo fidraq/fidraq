@@ -8,9 +8,9 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
-	saftajacontext "github.com/rbconsult-bh/saftaja/khazina/internal/pkg/context"
-	"github.com/rbconsult-bh/saftaja/khazina/internal/pkg/jwt"
-	"github.com/rbconsult-bh/saftaja/khazina/internal/transport/proto/saftaja/dashboard/auth/v1/authpbv1connect"
+	saftajacontext "github.com/saftaja-hq/saftaja/khazina/internal/pkg/context"
+	"github.com/saftaja-hq/saftaja/khazina/internal/pkg/jwt"
+	"github.com/saftaja-hq/saftaja/khazina/internal/transport/proto/saftaja/dashboard/auth/v1/authpbv1connect"
 	"github.com/rs/zerolog/log"
 )
 

@@ -442,7 +442,7 @@ const file_saftaja_dashboard_project_v1_project_proto_rawDesc = "" +
 	"\fapi_password\x18\x03 \x01(\tR\vapiPassword2\x81\x02\n" +
 	"\x0eProjectService\x12u\n" +
 	"\fListGateways\x121.saftaja.dashboard.project.v1.ListGatewaysRequest\x1a2.saftaja.dashboard.project.v1.ListGatewaysResponse\x12x\n" +
-	"\rCreateGateway\x122.saftaja.dashboard.project.v1.CreateGatewayRequest\x1a3.saftaja.dashboard.project.v1.CreateGatewayResponseBkZigithub.com/rbconsult-bh/saftaja/khazina/internal/transport/proto/saftaja/dashboard/project/v1;projectpbv1b\x06proto3"
+	"\rCreateGateway\x122.saftaja.dashboard.project.v1.CreateGatewayRequest\x1a3.saftaja.dashboard.project.v1.CreateGatewayResponseBiZggithub.com/saftaja-hq/saftaja/khazina/internal/transport/proto/saftaja/dashboard/project/v1;projectpbv1b\x06proto3"
 
 var (
 	file_saftaja_dashboard_project_v1_project_proto_rawDescOnce sync.Once

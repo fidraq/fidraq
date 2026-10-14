@@ -12,16 +12,16 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 
-	"github.com/rbconsult-bh/saftaja/khazina/internal/app/gateway"
-	gwmocks "github.com/rbconsult-bh/saftaja/khazina/internal/app/gateway/mocks"
-	"github.com/rbconsult-bh/saftaja/khazina/internal/app/payment"
-	paymentmocks "github.com/rbconsult-bh/saftaja/khazina/internal/app/payment/mocks"
-	"github.com/rbconsult-bh/saftaja/khazina/internal/app/tenant"
-	tenantmocks "github.com/rbconsult-bh/saftaja/khazina/internal/app/tenant/mocks"
-	saftajacontext "github.com/rbconsult-bh/saftaja/khazina/internal/pkg/context"
-	"github.com/rbconsult-bh/saftaja/khazina/internal/pkg/money"
-	"github.com/rbconsult-bh/saftaja/khazina/internal/pkg/ptr"
-	"github.com/rbconsult-bh/saftaja/khazina/internal/transport/checkout"
+	"github.com/saftaja-hq/saftaja/khazina/internal/app/gateway"
+	gwmocks "github.com/saftaja-hq/saftaja/khazina/internal/app/gateway/mocks"
+	"github.com/saftaja-hq/saftaja/khazina/internal/app/payment"
+	paymentmocks "github.com/saftaja-hq/saftaja/khazina/internal/app/payment/mocks"
+	"github.com/saftaja-hq/saftaja/khazina/internal/app/tenant"
+	tenantmocks "github.com/saftaja-hq/saftaja/khazina/internal/app/tenant/mocks"
+	saftajacontext "github.com/saftaja-hq/saftaja/khazina/internal/pkg/context"
+	"github.com/saftaja-hq/saftaja/khazina/internal/pkg/money"
+	"github.com/saftaja-hq/saftaja/khazina/internal/pkg/ptr"
+	"github.com/saftaja-hq/saftaja/khazina/internal/transport/checkout"
 )
 
 // --------------------------------------------------------------------------

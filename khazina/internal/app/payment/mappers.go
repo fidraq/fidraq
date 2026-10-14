@@ -3,8 +3,8 @@ package payment
 import (
 	"fmt"
 
-	"github.com/rbconsult-bh/saftaja/khazina/internal/pkg/ptr"
-	"github.com/rbconsult-bh/saftaja/khazina/internal/store"
+	"github.com/saftaja-hq/saftaja/khazina/internal/pkg/ptr"
+	"github.com/saftaja-hq/saftaja/khazina/internal/store"
 )
 
 func mapStoreInvoiceRowsToInvoice(rows []store.GetInvoiceWithItemsByIDAndProjectIDRow) (Invoice, error) {

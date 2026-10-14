@@ -12,12 +12,12 @@ import (
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 
-	"github.com/rbconsult-bh/saftaja/khazina/internal/app/gateway"
-	"github.com/rbconsult-bh/saftaja/khazina/internal/app/payment"
-	"github.com/rbconsult-bh/saftaja/khazina/internal/app/tenant"
-	mpgsclient "github.com/rbconsult-bh/saftaja/khazina/internal/clients/mpgs"
-	saftajacontext "github.com/rbconsult-bh/saftaja/khazina/internal/pkg/context"
-	"github.com/rbconsult-bh/saftaja/khazina/internal/transport/checkout/templfiles"
+	"github.com/saftaja-hq/saftaja/khazina/internal/app/gateway"
+	"github.com/saftaja-hq/saftaja/khazina/internal/app/payment"
+	"github.com/saftaja-hq/saftaja/khazina/internal/app/tenant"
+	mpgsclient "github.com/saftaja-hq/saftaja/khazina/internal/clients/mpgs"
+	saftajacontext "github.com/saftaja-hq/saftaja/khazina/internal/pkg/context"
+	"github.com/saftaja-hq/saftaja/khazina/internal/transport/checkout/templfiles"
 )
 
 type handlers struct {

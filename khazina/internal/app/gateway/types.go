@@ -7,7 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
-	mpgsclient "github.com/rbconsult-bh/saftaja/khazina/internal/clients/mpgs"
+	mpgsclient "github.com/saftaja-hq/saftaja/khazina/internal/clients/mpgs"
 )
 
 var (

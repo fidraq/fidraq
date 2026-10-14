@@ -10,10 +10,10 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rbconsult-bh/saftaja/khazina/internal/app/tenant"
-	"github.com/rbconsult-bh/saftaja/khazina/internal/app/tenant/mocks"
-	saftajacontext "github.com/rbconsult-bh/saftaja/khazina/internal/pkg/context"
-	"github.com/rbconsult-bh/saftaja/khazina/internal/transport/middleware"
+	"github.com/saftaja-hq/saftaja/khazina/internal/app/tenant"
+	"github.com/saftaja-hq/saftaja/khazina/internal/app/tenant/mocks"
+	saftajacontext "github.com/saftaja-hq/saftaja/khazina/internal/pkg/context"
+	"github.com/saftaja-hq/saftaja/khazina/internal/transport/middleware"
 )
 
 func TestTenantResolver_ValidDomain(t *testing.T) {

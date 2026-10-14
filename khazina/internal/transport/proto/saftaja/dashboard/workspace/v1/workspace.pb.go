@@ -359,7 +359,7 @@ const file_saftaja_dashboard_workspace_v1_workspace_proto_rawDesc = "" +
 	"\x13ENVIRONMENT_SANDBOX\x10\x01\x12\x1a\n" +
 	"\x16ENVIRONMENT_PRODUCTION\x10\x022\x8d\x01\n" +
 	"\x10WorkspaceService\x12y\n" +
-	"\fGetWorkspace\x123.saftaja.dashboard.workspace.v1.GetWorkspaceRequest\x1a4.saftaja.dashboard.workspace.v1.GetWorkspaceResponseBoZmgithub.com/rbconsult-bh/saftaja/khazina/internal/transport/proto/saftaja/dashboard/workspace/v1;workspacepbv1b\x06proto3"
+	"\fGetWorkspace\x123.saftaja.dashboard.workspace.v1.GetWorkspaceRequest\x1a4.saftaja.dashboard.workspace.v1.GetWorkspaceResponseBmZkgithub.com/saftaja-hq/saftaja/khazina/internal/transport/proto/saftaja/dashboard/workspace/v1;workspacepbv1b\x06proto3"
 
 var (
 	file_saftaja_dashboard_workspace_v1_workspace_proto_rawDescOnce sync.Once

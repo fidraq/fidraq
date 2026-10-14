@@ -5,10 +5,10 @@ import (
 	"errors"
 
 	"connectrpc.com/connect"
-	"github.com/rbconsult-bh/saftaja/khazina/internal/app/auth"
-	saftajacontext "github.com/rbconsult-bh/saftaja/khazina/internal/pkg/context"
-	authpbv1 "github.com/rbconsult-bh/saftaja/khazina/internal/transport/proto/saftaja/dashboard/auth/v1"
-	"github.com/rbconsult-bh/saftaja/khazina/internal/transport/proto/saftaja/dashboard/auth/v1/authpbv1connect"
+	"github.com/saftaja-hq/saftaja/khazina/internal/app/auth"
+	saftajacontext "github.com/saftaja-hq/saftaja/khazina/internal/pkg/context"
+	authpbv1 "github.com/saftaja-hq/saftaja/khazina/internal/transport/proto/saftaja/dashboard/auth/v1"
+	"github.com/saftaja-hq/saftaja/khazina/internal/transport/proto/saftaja/dashboard/auth/v1/authpbv1connect"
 	"github.com/rs/zerolog/log"
 )
 
