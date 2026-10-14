@@ -1,5 +1,15 @@
 :80 {
 	root * /srv
-	file_server
-	try_files {path} /index.html
+
+	# Runtime config, so one image works with any API URL.
+	handle /config.js {
+		header Content-Type "text/javascript; charset=utf-8"
+		header Cache-Control "no-store"
+		respond `window.__SAFTAJA_CONFIG__ = { apiUrl: "{$API_URL}" };` 200
+	}
+
+	handle {
+		try_files {path} /index.html
+		file_server
+	}
 }

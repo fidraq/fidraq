@@ -4,9 +4,17 @@ import { authInterceptor } from "./auth-interceptor";
 import { createClient } from "@connectrpc/connect";
 import { AuthService } from "../../gen/saftaja/dashboard/auth/v1/auth_pb";
 
-const apiUrl = import.meta.env.VITE_API_URL;
+declare global {
+  interface Window {
+    __SAFTAJA_CONFIG__?: { apiUrl?: string };
+  }
+}
+
+// Production sets apiUrl at container start (public/config.js, Caddyfile);
+// dev falls back to VITE_API_URL from mise.toml.
+const apiUrl = window.__SAFTAJA_CONFIG__?.apiUrl || import.meta.env.VITE_API_URL;
 if (!apiUrl) {
-  throw new Error("VITE_API_URL is not set");
+  throw new Error("API URL is not configured: set API_URL (prod) or VITE_API_URL (dev)");
 }
 
 const baseTransportOpts: ConnectTransportOptions = {
