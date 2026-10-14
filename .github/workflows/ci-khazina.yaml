@@ -5,6 +5,18 @@ on:
     paths:
       - 'khazina/**'
 
+permissions:
+  contents: read
+  packages: write
+
 jobs:
   test:
     uses: ./.github/workflows/reusable-test.yaml
+
+  build:
+    needs: test
+    uses: ./.github/workflows/reusable-build.yaml
+    with:
+      image_name: khazina
+      context_path: ./khazina
+      push: false

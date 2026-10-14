@@ -13,6 +13,11 @@ on:
         required: false
         type: string
         default: Dockerfile
+      push:
+        description: "Push the image to the registry (false = build only, for PRs)"
+        required: false
+        type: boolean
+        default: true
     outputs:
       image_digest:
         description: "Image digest"
@@ -48,6 +53,7 @@ jobs:
         uses: useblacksmith/setup-docker-builder@78f41686563c732ccc097f7baac2f092f67538f0 # v1
 
       - name: Login to GitHub Container Registry
+        if: inputs.push
         uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
         with:
           registry: ${{ env.REGISTRY }}
@@ -67,9 +73,10 @@ jobs:
           context: ${{ inputs.context_path }}
           file: ${{ inputs.context_path }}/${{ inputs.dockerfile_name }}
           platforms: linux/amd64,linux/arm64
-          push: true
+          push: ${{ inputs.push }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
       - name: Print Digest
+        if: inputs.push
         run: echo ${{ steps.push.outputs.digest }}
