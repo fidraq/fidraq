@@ -1,0 +1,98 @@
+# Everything you need besides a Docker runtime (OrbStack, Docker Desktop, ...).
+# sqlc, templ and mockery are pinned in khazina/go.mod and run via `go tool`.
+
+[tools]
+go = "1.25.9"
+bun = "1.4.3"
+buf = "1.73.0"
+
+# ---------------------------------------------------------------------------
+# dev
+# ---------------------------------------------------------------------------
+
+[tasks.dev]
+description = "Run the full stack with hot reload (db, khazina, diwan, bawaba)"
+run = "docker compose up --watch"
+
+# ---------------------------------------------------------------------------
+# test
+# ---------------------------------------------------------------------------
+
+[tasks."test:db"]
+description = "Start the throwaway test Postgres on :5433"
+run = "docker compose -f compose.test.yaml up -d --wait testdb"
+
+[tasks.test]
+description = "Run khazina unit/integration tests"
+depends = ["test:db"]
+dir = "khazina"
+run = "go test ./... -count=1 -race"
+
+[tasks."test:e2e"]
+description = "Run Playwright e2e tests (needs khazina/tests/e2e/.env)"
+dir = "khazina/tests/e2e"
+run = [
+  "bun install --frozen-lockfile",
+  "bun playwright install chromium",
+  "bun playwright test -j 1",
+]
+
+[tasks."test:down"]
+description = "Stop the test Postgres"
+run = "docker compose -f compose.test.yaml down"
+
+# ---------------------------------------------------------------------------
+# codegen
+# ---------------------------------------------------------------------------
+
+[tasks."gen:sql"]
+description = "Generate Go from SQL queries (sqlc)"
+dir = "khazina"
+run = "go tool sqlc generate"
+
+[tasks."gen:templ"]
+description = "Generate Go from .templ files"
+dir = "khazina"
+run = "go tool templ generate"
+
+[tasks."gen:mocks"]
+description = "Generate mocks (mockery)"
+dir = "khazina"
+run = "go tool mockery"
+
+[tasks."gen:proto"]
+description = "Generate Go + TS from protos (buf)"
+dir = "proto"
+run = "buf generate"
+
+[tasks.gen]
+description = "Run all code generation"
+depends = ["gen:sql", "gen:templ", "gen:mocks", "gen:proto"]
+
+# ---------------------------------------------------------------------------
+# lint
+# ---------------------------------------------------------------------------
+
+[tasks.lint]
+description = "go vet + diwan eslint"
+run = [
+  "cd khazina && go vet ./...",
+  "cd diwan && bun install --frozen-lockfile && bun run lint",
+]
+
+# ---------------------------------------------------------------------------
+# migrations (khazina also applies them automatically on startup)
+# ---------------------------------------------------------------------------
+
+[tasks."migrate:create"]
+description = "Create a new migration: mise run migrate:create <name>"
+usage = 'arg "<name>"'
+run = "docker compose run --rm migrate create -ext sql -dir /migrations -seq ${usage_name}"
+
+[tasks."migrate:down"]
+description = "Roll back the last migration on the dev db"
+run = '''
+set -a; . ./.env; set +a
+docker compose run --rm migrate -path=/migrations \
+  -database "postgres://$DB_USER:$DB_PASSWORD@db:5432/$DB_DATABASE?sslmode=disable" down 1
+'''
