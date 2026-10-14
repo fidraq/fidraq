@@ -8,12 +8,12 @@ import (
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 
-	"github.com/rbconsult-bh/saftaja/khazina/internal/app/gateway"
-	"github.com/rbconsult-bh/saftaja/khazina/internal/app/membership"
-	mpgsclient "github.com/rbconsult-bh/saftaja/khazina/internal/clients/mpgs"
-	saftajacontext "github.com/rbconsult-bh/saftaja/khazina/internal/pkg/context"
-	projectpbv1 "github.com/rbconsult-bh/saftaja/khazina/internal/transport/proto/saftaja/dashboard/project/v1"
-	"github.com/rbconsult-bh/saftaja/khazina/internal/transport/proto/saftaja/dashboard/project/v1/projectpbv1connect"
+	"github.com/saftaja-hq/saftaja/khazina/internal/app/gateway"
+	"github.com/saftaja-hq/saftaja/khazina/internal/app/membership"
+	mpgsclient "github.com/saftaja-hq/saftaja/khazina/internal/clients/mpgs"
+	saftajacontext "github.com/saftaja-hq/saftaja/khazina/internal/pkg/context"
+	projectpbv1 "github.com/saftaja-hq/saftaja/khazina/internal/transport/proto/saftaja/dashboard/project/v1"
+	"github.com/saftaja-hq/saftaja/khazina/internal/transport/proto/saftaja/dashboard/project/v1/projectpbv1connect"
 )
 
 var errInternal = connect.NewError(connect.CodeInternal, errors.New("internal server error"))

@@ -8,9 +8,9 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/rbconsult-bh/saftaja/khazina/internal/pkg/money"
-	"github.com/rbconsult-bh/saftaja/khazina/internal/store"
-	"github.com/rbconsult-bh/saftaja/khazina/internal/testutil"
+	"github.com/saftaja-hq/saftaja/khazina/internal/pkg/money"
+	"github.com/saftaja-hq/saftaja/khazina/internal/store"
+	"github.com/saftaja-hq/saftaja/khazina/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

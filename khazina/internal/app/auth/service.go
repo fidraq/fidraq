@@ -11,9 +11,9 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/rbconsult-bh/saftaja/khazina/internal/clients/email"
-	"github.com/rbconsult-bh/saftaja/khazina/internal/pkg/jwt"
-	"github.com/rbconsult-bh/saftaja/khazina/internal/store"
+	"github.com/saftaja-hq/saftaja/khazina/internal/clients/email"
+	"github.com/saftaja-hq/saftaja/khazina/internal/pkg/jwt"
+	"github.com/saftaja-hq/saftaja/khazina/internal/store"
 	"github.com/rs/zerolog/log"
 )
 

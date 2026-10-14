@@ -9,7 +9,7 @@ import (
 	"context"
 
 	"github.com/google/uuid"
-	"github.com/rbconsult-bh/saftaja/khazina/internal/pkg/money"
+	"github.com/saftaja-hq/saftaja/khazina/internal/pkg/money"
 )
 
 const createPaymentIntent = `-- name: CreatePaymentIntent :one

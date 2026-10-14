@@ -3,7 +3,7 @@ package gateway
 import (
 	"fmt"
 
-	"github.com/rbconsult-bh/saftaja/khazina/internal/store"
+	"github.com/saftaja-hq/saftaja/khazina/internal/store"
 )
 
 func mapConnectorTypeFromStore(ct store.ConnectorType) (ConnectorType, error) {

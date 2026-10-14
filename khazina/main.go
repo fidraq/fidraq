@@ -8,8 +8,8 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
-	"github.com/rbconsult-bh/saftaja/khazina/internal/config"
-	"github.com/rbconsult-bh/saftaja/khazina/server"
+	"github.com/saftaja-hq/saftaja/khazina/internal/config"
+	"github.com/saftaja-hq/saftaja/khazina/server"
 )
 
 func main() {

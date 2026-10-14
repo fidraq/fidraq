@@ -6,10 +6,10 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
-	mpgsclient "github.com/rbconsult-bh/saftaja/khazina/internal/clients/mpgs"
-	"github.com/rbconsult-bh/saftaja/khazina/internal/pkg/money"
-	"github.com/rbconsult-bh/saftaja/khazina/internal/pkg/ptr"
-	"github.com/rbconsult-bh/saftaja/khazina/internal/store"
+	mpgsclient "github.com/saftaja-hq/saftaja/khazina/internal/clients/mpgs"
+	"github.com/saftaja-hq/saftaja/khazina/internal/pkg/money"
+	"github.com/saftaja-hq/saftaja/khazina/internal/pkg/ptr"
+	"github.com/saftaja-hq/saftaja/khazina/internal/store"
 )
 
 type mpgsCardGateway struct {

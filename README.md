@@ -56,4 +56,4 @@ mise run migrate:create <name>
 ## Deploying
 
 Each push to `main` publishes Docker images to
-`ghcr.io/rbconsult-bh/saftaja`. A Helm chart for self-hosting is coming.
+`ghcr.io/saftaja-hq/saftaja`. A Helm chart for self-hosting is coming.

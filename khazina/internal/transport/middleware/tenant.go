@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"strings"
 
-	saftajacontext "github.com/rbconsult-bh/saftaja/khazina/internal/pkg/context"
-	"github.com/rbconsult-bh/saftaja/khazina/internal/app/tenant"
+	saftajacontext "github.com/saftaja-hq/saftaja/khazina/internal/pkg/context"
+	"github.com/saftaja-hq/saftaja/khazina/internal/app/tenant"
 )
 
 func TenantResolver(svc tenant.Service) func(http.Handler) http.Handler {

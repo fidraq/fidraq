@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/rbconsult-bh/saftaja/khazina/internal/pkg/money"
+	"github.com/saftaja-hq/saftaja/khazina/internal/pkg/money"
 )
 
 type OrganizationRole string

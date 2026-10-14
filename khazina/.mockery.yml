@@ -1,6 +1,6 @@
 template: testify
 packages:
-  github.com/rbconsult-bh/saftaja/khazina/internal/app/payment:
+  github.com/saftaja-hq/saftaja/khazina/internal/app/payment:
     interfaces:
       Service:
         config:
@@ -8,7 +8,7 @@ packages:
           pkgname: mocks
           structname: MockService
           filename: mock_Service.go
-  github.com/rbconsult-bh/saftaja/khazina/internal/app/gateway:
+  github.com/saftaja-hq/saftaja/khazina/internal/app/gateway:
     interfaces:
       Service:
         config:
@@ -16,7 +16,7 @@ packages:
           pkgname: mocks
           structname: MockService
           filename: mock_Service.go
-  github.com/rbconsult-bh/saftaja/khazina/internal/app/tenant:
+  github.com/saftaja-hq/saftaja/khazina/internal/app/tenant:
     interfaces:
       Service:
         config:
@@ -24,7 +24,7 @@ packages:
           pkgname: mocks
           structname: MockService
           filename: mock_Service.go
-  github.com/rbconsult-bh/saftaja/khazina/internal/clients/mpgs:
+  github.com/saftaja-hq/saftaja/khazina/internal/clients/mpgs:
     interfaces:
       Client:
         config:

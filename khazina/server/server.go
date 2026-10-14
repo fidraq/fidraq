@@ -12,7 +12,7 @@ import (
 	"github.com/go-chi/chi"
 	"github.com/rs/zerolog/log"
 
-	"github.com/rbconsult-bh/saftaja/khazina/internal/config"
+	"github.com/saftaja-hq/saftaja/khazina/internal/config"
 )
 
 func RunServer(ctx context.Context, cfg *config.Config, r *chi.Mux) {

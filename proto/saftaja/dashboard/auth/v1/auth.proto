@@ -4,7 +4,7 @@ package saftaja.dashboard.auth.v1;
 
 import "buf/validate/validate.proto";
 
-option go_package = "github.com/rbconsult-bh/saftaja/khazina/internal/transport/proto/saftaja/dashboard/auth/v1;authpbv1";
+option go_package = "github.com/saftaja-hq/saftaja/khazina/internal/transport/proto/saftaja/dashboard/auth/v1;authpbv1";
 
 service AuthService {
   rpc InitiateAuth(InitiateAuthRequest) returns (InitiateAuthResponse);

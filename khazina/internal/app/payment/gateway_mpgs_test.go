@@ -6,9 +6,9 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	mpgsclient "github.com/rbconsult-bh/saftaja/khazina/internal/clients/mpgs"
-	mpgsmocks "github.com/rbconsult-bh/saftaja/khazina/internal/clients/mpgs/mocks"
-	"github.com/rbconsult-bh/saftaja/khazina/internal/pkg/money"
+	mpgsclient "github.com/saftaja-hq/saftaja/khazina/internal/clients/mpgs"
+	mpgsmocks "github.com/saftaja-hq/saftaja/khazina/internal/clients/mpgs/mocks"
+	"github.com/saftaja-hq/saftaja/khazina/internal/pkg/money"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"

@@ -8,7 +8,7 @@ import (
 	connect "connectrpc.com/connect"
 	context "context"
 	errors "errors"
-	v1 "github.com/rbconsult-bh/saftaja/khazina/internal/transport/proto/saftaja/dashboard/project/v1"
+	v1 "github.com/saftaja-hq/saftaja/khazina/internal/transport/proto/saftaja/dashboard/project/v1"
 	http "net/http"
 	strings "strings"
 )

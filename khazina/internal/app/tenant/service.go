@@ -7,8 +7,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/rbconsult-bh/saftaja/khazina/internal/pkg/ptr"
-	"github.com/rbconsult-bh/saftaja/khazina/internal/store"
+	"github.com/saftaja-hq/saftaja/khazina/internal/pkg/ptr"
+	"github.com/saftaja-hq/saftaja/khazina/internal/store"
 )
 
 type Project struct {
