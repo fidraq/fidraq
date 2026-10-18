@@ -1,8 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
 
-import dotenv from 'dotenv';
-dotenv.config();
-
 /**
  * See https://playwright.dev/docs/test-configuration.
  */
@@ -15,7 +12,7 @@ export default defineConfig({
   timeout: 120000,
   reporter: 'html',
   use: {
-    baseURL: process.env.BASE_URL || 'http://localhost:8080',
+    baseURL: process.env.KHAZINA_TEST_BASE_URL || 'http://localhost:8080',
     extraHTTPHeaders: {
       'bypass-tunnel-reminder': 'i guess we need this weird header :D'
     },

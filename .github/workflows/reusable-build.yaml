@@ -13,13 +13,18 @@ on:
         required: false
         type: string
         default: Dockerfile
+      push:
+        description: "Push the image to the registry (false = build only, for PRs)"
+        required: false
+        type: boolean
+        default: true
     outputs:
       image_digest:
         description: "Image digest"
-        value: ${{ jobs.build-and-push-image.outputs.digest }}
+        value: ${{ jobs.build.outputs.digest }}
       image_tag:
         description: "Full image tag"
-        value: ${{ jobs.build-and-push-image.outputs.tag }}
+        value: ${{ jobs.build.outputs.tag }}
 
 concurrency:
   group: build-${{ inputs.image_name }}-${{ github.ref }}
@@ -29,8 +34,8 @@ env:
   REGISTRY: ghcr.io
 
 jobs:
-  build-and-push-image:
-    runs-on: blacksmith-4vcpu-ubuntu-2204
+  build:
+    runs-on: ubuntu-latest
     outputs:
       digest: ${{ steps.push.outputs.digest }}
       tag: ${{ steps.meta.outputs.tags }}
@@ -39,15 +44,16 @@ jobs:
       packages: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3.6.0
 
-      - name: Set up Docker Build
-        uses: useblacksmith/setup-docker-builder@78f41686563c732ccc097f7baac2f092f67538f0 # v1
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Login to GitHub Container Registry
+        if: inputs.push
         uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
         with:
           registry: ${{ env.REGISTRY }}
@@ -62,14 +68,17 @@ jobs:
 
       - name: Build and push
         id: push
-        uses: useblacksmith/build-push-action@30c71162f16ea2c27c3e21523255d209b8b538c1 # v2
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: ${{ inputs.context_path }}
           file: ${{ inputs.context_path }}/${{ inputs.dockerfile_name }}
           platforms: linux/amd64,linux/arm64
-          push: true
+          push: ${{ inputs.push }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ inputs.image_name }}
+          cache-to: type=gha,mode=max,scope=${{ inputs.image_name }}
 
       - name: Print Digest
+        if: inputs.push
         run: echo ${{ steps.push.outputs.digest }}

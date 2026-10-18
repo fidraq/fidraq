@@ -12,14 +12,13 @@ permissions:
   packages: write
 
 jobs:
+  test:
+    uses: ./.github/workflows/reusable-test.yaml
+
   build:
+    needs: test
     uses: ./.github/workflows/reusable-build.yaml
     secrets: inherit
     with:
       image_name: khazina
       context_path: ./khazina
-
-  deploy:
-    needs: build
-    uses: ./.github/workflows/deploy.yaml
-    secrets: inherit

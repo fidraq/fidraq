@@ -1,12 +1,11 @@
 # e2e tests
 
-## Requirements
+Runs a real card payment against the MPGS test gateway. Khazina and Postgres are
+started in Docker and exposed through a public tunnel so 3DS can call back.
 
-- bun
-
-Copy the `.env.example` into `.env` and fill variables before running the tests,
-then run the tests like this:
+Put your MPGS test merchant credentials in `mise.local.toml` at the repo root
+(`mise run setup` creates it), then from the repo root:
 
 ```bash
-bun playwright test -j 1 --headed
+mise run test:e2e
 ```

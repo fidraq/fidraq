@@ -1,12 +1,9 @@
-FROM golang:1.25.5 AS base
+FROM golang:1.25.9 AS base
 WORKDIR /khazina
+
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-
-
-FROM base AS dev
-CMD [ "go", "run", "main.go" ]
 
 
 FROM base AS builder

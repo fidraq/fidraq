@@ -1,196 +1,59 @@
 # saftaja | سفتجة
 
-A self-hosted payment checkout system. Accept card payments via MPGS (Mastercard Payment Gateway Services) with 3DS authentication. Think of it as your own mini-Stripe on top of MPGS.
+Self-hostable, open-source payments on top of MPGS (Mastercard Payment Gateway
+Services), the gateway most Gulf banks hand to merchants. Saftaja gives you hosted
+checkout pages with 3-D Secure, per-merchant custom domains with automatic TLS, and a
+dashboard, so you don't have to integrate MPGS by hand.
 
-## Features
+> **Status:** pre-release. Card payments with 3DS work end to end. The merchant API,
+> webhooks and Apple Pay are in progress.
 
-- Hosted checkout pages with custom branding
-- 3DS2 authentication flow (frictionless + challenge)
-- Multi-language support (English, Arabic)
-- Custom domain support per merchant
-- Apple Pay (coming soon)
+## Repo layout
 
-## Quick Start
+| Path      | What                                                        |
+| --------- | ----------------------------------------------------------- |
+| `khazina` | Go backend: payments, hosted checkout, dashboard API        |
+| `diwan`   | Merchant dashboard (React + Vite)                           |
+| `bawaba`  | Landing page                                                |
+| `proto`   | Dashboard API definitions (Connect RPC), generated with buf |
 
-```bash
-# Copy environment file
-cp .env.example .env
-# Edit .env with your database credentials
+## Getting started
 
-# Start PostgreSQL and the app
-docker compose up
-
-# App runs at http://localhost:8080
-```
-
-## Development
-
-### Prerequisites
-
-- Go 1.24+
-- Docker & Docker Compose
-- Bun (for e2e tests)
-
-### Project Structure
-
-```
-internal/
-├── domain/           # Core types, i18n, constants
-├── connectors/       # Payment gateway abstraction
-│   └── mpgs/         # MPGS connector
-├── payment/          # Business logic & state machine
-├── clients/mpgs/     # MPGS HTTP client
-├── store/            # Database layer (sqlc-generated)
-│   ├── queries/      # SQL query files
-│   └── migrations/   # Database migrations
-├── web/              # HTTP handlers
-│   └── templfiles/   # HTML templates (templ)
-├── config/           # Configuration
-└── utils/            # Utilities
-```
-
-### Code Generation
+You need [mise](https://mise.jdx.dev) and a Docker runtime such as
+[OrbStack](https://orbstack.dev) (only Postgres runs in Docker). mise installs
+every other tool at the pinned version.
 
 ```bash
-# After editing SQL queries (internal/store/queries/*.sql)
-go tool sqlc generate
-
-# After editing templates (internal/web/templfiles/*.templ)
-go tool templ generate
-
-# After editing interfaces (for mocks)
-go tool mockery
+mise install      # Go, Bun, buf, sqlc, templ, ...
+mise run setup    # generates your local secrets into mise.local.toml
+mise run dev      # Postgres + khazina + diwan, with hot reload
 ```
 
-### Running Tests
+| Service | URL                   |
+| ------- | --------------------- |
+| khazina | http://localhost:8080 |
+| diwan   | http://localhost:5173 |
+
+Config lives in two places:
+
+- `mise.toml`: dev defaults (database URL, ports, ...), committed.
+- `mise.local.toml`: your secrets, gitignored. Re-run `mise run setup` after
+  pulling; it only adds variables you don't have yet.
+
+Production reads the same variable names from its own environment.
+
+## Common tasks
 
 ```bash
-# Unit tests
-go test ./internal/...
-
-# E2E tests
-cd tests/e2e
-bun playwright test -j 1 --headed
+mise tasks                      # list everything
+mise run test                   # Go tests (throwaway Postgres on :5433)
+mise run test:e2e               # Playwright e2e, needs MPGS test creds in mise.local.toml
+mise run gen                    # sqlc, templ, mockery, buf
+mise run lint
+mise run migrate:create <name>
 ```
 
-### Database Migrations
+## Deploying
 
-Migrations run automatically on startup. For manual operations:
-
-```bash
-# Apply migrations
-docker compose run --rm migrate -path=/migrations -database="postgres://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_DATABASE}?sslmode=disable" up
-
-# Create new migration
-docker compose run --rm migrate create -ext sql -dir /migrations -seq <name>
-
-# Rollback one migration
-docker compose run --rm migrate -path=/migrations -database="postgres://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_DATABASE}?sslmode=disable" down 1
-```
-
-## Payment Flow
-
-```
-┌─────────────┐     ┌──────────────┐     ┌─────────────┐     ┌──────────────┐
-│  Checkout   │────►│   Initiate   │────►│  3DS Auth   │────►│   Finalize   │
-│    Page     │     │   Session    │     │   (if req)  │     │   Payment    │
-└─────────────┘     └──────────────┘     └─────────────┘     └──────────────┘
-       │                   │                    │                    │
-       ▼                   ▼                    ▼                    ▼
-   GET /checkout     POST /initiate      POST /process-auth    POST /finalize
-       │                   │                    │                    │
-       ▼                   ▼                    ▼                    ▼
-   Invoice info      Session created     Authentication       Payment executed
-   + gateway config  + MPGS session      completed            Invoice marked paid
-```
-
-### State Machine
-
-```
-PaymentSession: created → authenticating → authenticated → paying → completed
-                    ↓           ↓                            ↓
-                  failed      failed                       failed
-
-Invoice: pending → processing → paid
-             ↓          ↓
-           failed     failed
-```
-
-## API Endpoints
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/health` | Health check |
-| GET | `/checkout/{invoice_id}` | Render checkout page |
-| POST | `/checkout/{invoice_id}/initiate` | Create payment session |
-| POST | `/checkout/{invoice_id}/pay/card/{session_id}/initiate-auth` | Start 3DS auth |
-| POST | `/checkout/{invoice_id}/pay/card/{session_id}/process-auth` | Process 3DS challenge |
-| POST | `/checkout/{invoice_id}/pay/card/{session_id}/finalize` | Execute payment |
-
-## Configuration
-
-Environment variables (set in `.env`):
-
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `DB_HOST` | PostgreSQL host | Yes |
-| `DB_PORT` | PostgreSQL port | Yes |
-| `DB_DATABASE` | Database name | Yes |
-| `DB_USER` | Database user | Yes |
-| `DB_PASSWORD` | Database password | Yes |
-| `PORT` | HTTP server port | Yes |
-| `ENCRYPTION_KEY` | 32-byte key, base64 encoded | Yes |
-| `VERIFY_DOMAIN_SECRET` | Secret for Caddy domain verification | Yes |
-| `ADMIN_API_KEY` | API key for admin endpoints | Yes |
-| `ACME_EMAIL` | Email for Let's Encrypt (prod only) | Prod |
-| `BASE_DOMAIN` | Your main domain (prod only) | Prod |
-
-## Generating Secrets
-
-```bash
-# Generate ENCRYPTION_KEY (32 bytes, base64)
-openssl rand -base64 32
-
-# Generate ADMIN_API_KEY
-openssl rand -hex 32
-
-# Generate VERIFY_DOMAIN_SECRET
-openssl rand -hex 16
-```
-
-## Admin API
-
-Protected by `X-Admin-Key` header. Use these to create orgs, projects, gateway accounts, and invoices.
-
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | `/admin/organizations` | Create organization |
-| POST | `/admin/projects` | Create project |
-| POST | `/admin/gateway-accounts` | Create gateway account |
-| POST | `/admin/invoices` | Create invoice |
-
-Example:
-```bash
-# Create org
-curl -X POST http://localhost:8080/admin/organizations \
-  -H "X-Admin-Key: $ADMIN_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"name": "My Company"}'
-
-# Create project
-curl -X POST http://localhost:8080/admin/projects \
-  -H "X-Admin-Key: $ADMIN_API_KEY" \
-  -d '{"organization_id": "uuid", "name": "Production", "environment": "production", "custom_domain": "pay.example.com"}'
-
-# Create gateway account
-curl -X POST http://localhost:8080/admin/gateway-accounts \
-  -H "X-Admin-Key: $ADMIN_API_KEY" \
-  -d '{"project_id": "uuid", "connector_type": "mpgs", "account_name": "MPGS Prod", "credentials": {"merchant_id": "...", "api_password": "...", "base_url": "https://..."}}'
-
-# Create invoice
-curl -X POST http://localhost:8080/admin/invoices \
-  -H "X-Admin-Key: $ADMIN_API_KEY" \
-  -d '{"project_id": "uuid", "amount": "15.000", "currency": "BHD", "customer_email": "test@example.com"}'
-```
-
-
+Each push to `main` publishes Docker images to
+`ghcr.io/saftaja-hq/saftaja`. A Helm chart for self-hosting is coming.
