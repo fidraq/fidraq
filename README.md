@@ -55,8 +55,10 @@ mise run migrate:create <name>
 
 ## Deploying
 
-Each push to `main` publishes Docker images to
-`ghcr.io/saftaja-hq/saftaja`. A Helm chart for self-hosting is coming.
+Pushing a version tag (`v0.1.0`) publishes the khazina image to
+`ghcr.io/saftaja-hq/saftaja/khazina`, tagged `0.1.0`, `0.1` and `latest`.
+Pull requests build the image without publishing it. A Helm chart for
+self-hosting is coming.
 
 ## License
 

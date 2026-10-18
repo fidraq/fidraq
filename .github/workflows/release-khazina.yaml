@@ -1,11 +1,8 @@
-name: Build Khazina
+name: Release Khazina
 
 on:
   push:
-    branches: [main]
-    paths:
-      - 'khazina/**'
-  workflow_dispatch:
+    tags: ['v*']
 
 permissions:
   contents: read
