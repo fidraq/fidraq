@@ -31,8 +31,8 @@ mise run dev      # Postgres + khazina + diwan, with hot reload
 
 | Service | URL                   |
 | ------- | --------------------- |
-| khazina | http://localhost:8080 |
-| diwan   | http://localhost:5173 |
+| khazina | <http://localhost:8080> |
+| diwan   | <http://localhost:5173> |
 
 Config lives in two places:
 
@@ -57,3 +57,11 @@ mise run migrate:create <name>
 
 Each push to `main` publishes Docker images to
 `ghcr.io/saftaja-hq/saftaja`. A Helm chart for self-hosting is coming.
+
+## License
+
+Copyright (C) 2025-2026 Yazeed AlKhalaf
+
+saftaja is free software: you can redistribute it and/or modify it under the
+terms of the GNU Affero General Public License, version 3 only, as published by
+the Free Software Foundation. See [LICENSE](LICENSE) for the full text.
