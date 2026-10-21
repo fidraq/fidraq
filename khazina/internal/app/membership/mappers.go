@@ -1,6 +1,6 @@
 package membership
 
-import "github.com/saftaja-hq/saftaja/khazina/internal/store"
+import "github.com/fidraq/fidraq/khazina/internal/store"
 
 func mapEnvironmentFromStore(env store.ProjectEnvironment) ProjectEnvironment {
 	switch env {

@@ -10,10 +10,10 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/saftaja-hq/saftaja/khazina/internal/app/tenant"
-	"github.com/saftaja-hq/saftaja/khazina/internal/app/tenant/mocks"
-	saftajacontext "github.com/saftaja-hq/saftaja/khazina/internal/pkg/context"
-	"github.com/saftaja-hq/saftaja/khazina/internal/transport/middleware"
+	"github.com/fidraq/fidraq/khazina/internal/app/tenant"
+	"github.com/fidraq/fidraq/khazina/internal/app/tenant/mocks"
+	fidraqcontext "github.com/fidraq/fidraq/khazina/internal/pkg/context"
+	"github.com/fidraq/fidraq/khazina/internal/transport/middleware"
 )
 
 func TestTenantResolver_ValidDomain(t *testing.T) {
@@ -27,7 +27,7 @@ func TestTenantResolver_ValidDomain(t *testing.T) {
 	mockSvc.EXPECT().GetProjectByDomain(mock.Anything, "pay.merchant.com").Return(project, nil)
 
 	handler := middleware.TenantResolver(mockSvc)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		p := saftajacontext.ProjectFromContext(r.Context())
+		p := fidraqcontext.ProjectFromContext(r.Context())
 		require.NotNil(t, p)
 		require.Equal(t, projectID, p.ID)
 		w.WriteHeader(http.StatusOK)
@@ -52,7 +52,7 @@ func TestTenantResolver_ValidDomainWithPort(t *testing.T) {
 	mockSvc.EXPECT().GetProjectByDomain(mock.Anything, "pay.merchant.com").Return(project, nil)
 
 	handler := middleware.TenantResolver(mockSvc)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		p := saftajacontext.ProjectFromContext(r.Context())
+		p := fidraqcontext.ProjectFromContext(r.Context())
 		require.NotNil(t, p)
 		require.Equal(t, projectID, p.ID)
 		w.WriteHeader(http.StatusOK)
@@ -71,7 +71,7 @@ func TestTenantResolver_InvalidDomain(t *testing.T) {
 	mockSvc.EXPECT().GetProjectByDomain(mock.Anything, "unknown.com").Return(nil, pgx.ErrNoRows)
 
 	handler := middleware.TenantResolver(mockSvc)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		p := saftajacontext.ProjectFromContext(r.Context())
+		p := fidraqcontext.ProjectFromContext(r.Context())
 		require.Nil(t, p)
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -86,6 +86,6 @@ func TestTenantResolver_InvalidDomain(t *testing.T) {
 
 func TestGetProjectFromContext_NilWhenNoProject(t *testing.T) {
 	req := httptest.NewRequest("GET", "/test", nil)
-	p := saftajacontext.ProjectFromContext(req.Context())
+	p := fidraqcontext.ProjectFromContext(req.Context())
 	require.Nil(t, p)
 }

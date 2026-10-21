@@ -5,10 +5,10 @@ import (
 	"errors"
 
 	"connectrpc.com/connect"
-	"github.com/saftaja-hq/saftaja/khazina/internal/app/membership"
-	saftajacontext "github.com/saftaja-hq/saftaja/khazina/internal/pkg/context"
-	workspacepbv1 "github.com/saftaja-hq/saftaja/khazina/internal/transport/proto/saftaja/dashboard/workspace/v1"
-	"github.com/saftaja-hq/saftaja/khazina/internal/transport/proto/saftaja/dashboard/workspace/v1/workspacepbv1connect"
+	"github.com/fidraq/fidraq/khazina/internal/app/membership"
+	fidraqcontext "github.com/fidraq/fidraq/khazina/internal/pkg/context"
+	workspacepbv1 "github.com/fidraq/fidraq/khazina/internal/transport/proto/fidraq/dashboard/workspace/v1"
+	"github.com/fidraq/fidraq/khazina/internal/transport/proto/fidraq/dashboard/workspace/v1/workspacepbv1connect"
 	"github.com/rs/zerolog/log"
 )
 
@@ -25,7 +25,7 @@ func New(membership membership.MembershipService) workspacepbv1connect.Workspace
 }
 
 func (s *service) GetWorkspace(ctx context.Context, r *connect.Request[workspacepbv1.GetWorkspaceRequest]) (*connect.Response[workspacepbv1.GetWorkspaceResponse], error) {
-	customerID, err := saftajacontext.CustomerID(ctx)
+	customerID, err := fidraqcontext.CustomerID(ctx)
 	if err != nil {
 		log.Ctx(ctx).Error().Err(err).Msg("failed to get customer id from context")
 		return nil, connect.NewError(connect.CodeUnauthenticated, nil)

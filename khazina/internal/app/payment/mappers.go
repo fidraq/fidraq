@@ -3,8 +3,8 @@ package payment
 import (
 	"fmt"
 
-	"github.com/saftaja-hq/saftaja/khazina/internal/pkg/ptr"
-	"github.com/saftaja-hq/saftaja/khazina/internal/store"
+	"github.com/fidraq/fidraq/khazina/internal/pkg/ptr"
+	"github.com/fidraq/fidraq/khazina/internal/store"
 )
 
 func mapStoreInvoiceRowsToInvoice(rows []store.GetInvoiceWithItemsByIDAndProjectIDRow) (Invoice, error) {

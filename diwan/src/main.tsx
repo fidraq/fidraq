@@ -12,7 +12,7 @@ import { m } from './paraglide/messages'
 const router = createRouter({
   routeTree, defaultPendingComponent: () => (
     <div className="flex h-screen items-center justify-center">
-      <p>{m.common_loading_saftaja()}</p>
+      <p>{m.common_loading_fidraq()}</p>
     </div>
   ),
 })

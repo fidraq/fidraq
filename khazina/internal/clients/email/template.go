@@ -25,7 +25,7 @@ func NewTemplates(dashboardURL string) Templates {
 }
 
 func (t *templates) MagicLinkTemplate(token string) (*Template, error) {
-	subject := "Saftaja Magic Link ✉️"
+	subject := "Fidraq Magic Link ✉️"
 
 	htmlContent := fmt.Sprintf(`<h1>%s</h1>
 	
@@ -36,7 +36,7 @@ Use the link below to login to your account, or create one if this is your first
 If you didn't request this email, you can ignore it safely :D
 
 Thanks,
-Your Friendly Saftaja Team`, subject, t.dashboardURL, token)
+Your Friendly Fidraq Team`, subject, t.dashboardURL, token)
 
 	return &Template{
 		Subject: subject,
@@ -52,7 +52,7 @@ func (t *templates) WelcomeTemplate(name string) (*Template, error) {
 We are happy that you decided to use the best payment checkout system to exist :D
 
 Thanks,
-Your Friendly Saftaja Team`, name)
+Your Friendly Fidraq Team`, name)
 
 	return &Template{
 		Subject: subject,

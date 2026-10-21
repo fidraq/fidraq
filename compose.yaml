@@ -1,6 +1,6 @@
 # Local Postgres only. Everything else runs natively via mise (see mise.toml).
 
-name: saftaja
+name: fidraq
 
 services:
   db:
@@ -8,13 +8,13 @@ services:
     ports:
       - "5432:5432"
     environment:
-      POSTGRES_USER: saftaja
-      POSTGRES_PASSWORD: saftaja
-      POSTGRES_DB: saftaja
+      POSTGRES_USER: fidraq
+      POSTGRES_PASSWORD: fidraq
+      POSTGRES_DB: fidraq
     volumes:
       - pgdata:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U saftaja -d saftaja"]
+      test: ["CMD-SHELL", "pg_isready -U fidraq -d fidraq"]
       interval: 5s
       timeout: 5s
       retries: 5

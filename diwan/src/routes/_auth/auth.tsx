@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useMutation } from '@connectrpc/connect-query'
 import { createFileRoute } from '@tanstack/react-router'
-import { initiateAuth } from '../../gen/saftaja/dashboard/auth/v1/auth-AuthService_connectquery'
+import { initiateAuth } from '../../gen/fidraq/dashboard/auth/v1/auth-AuthService_connectquery'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"

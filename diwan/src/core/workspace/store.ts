@@ -19,7 +19,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       },
     }),
     {
-      name: 'saftaja-workspace-context',
+      name: 'fidraq-workspace-context',
       partialize: (state) => ({ lastActiveProjectId: state.lastActiveProjectId }),
       merge: (persisted, current) => {
         const state = persisted as Partial<WorkspaceState> | undefined

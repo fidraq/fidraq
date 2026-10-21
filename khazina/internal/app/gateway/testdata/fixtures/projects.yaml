@@ -2,7 +2,7 @@
   organization_id: 00000000-0000-0000-0000-000000000010
   name: test proj
   environment: sandbox
-  custom_domain: test.saftaja.com
+  custom_domain: test.fidraq.com
   created_at: "2026-05-29 10:00:00Z"
   updated_at: "2026-05-29 10:00:00Z"
   deleted_at: null

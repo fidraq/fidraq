@@ -1,11 +1,11 @@
-package saftajacontext
+package fidraqcontext
 
 import (
 	"context"
 	"fmt"
 
 	"github.com/google/uuid"
-	"github.com/saftaja-hq/saftaja/khazina/internal/app/tenant"
+	"github.com/fidraq/fidraq/khazina/internal/app/tenant"
 )
 
 type (

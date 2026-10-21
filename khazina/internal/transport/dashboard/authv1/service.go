@@ -5,10 +5,10 @@ import (
 	"errors"
 
 	"connectrpc.com/connect"
-	"github.com/saftaja-hq/saftaja/khazina/internal/app/auth"
-	saftajacontext "github.com/saftaja-hq/saftaja/khazina/internal/pkg/context"
-	authpbv1 "github.com/saftaja-hq/saftaja/khazina/internal/transport/proto/saftaja/dashboard/auth/v1"
-	"github.com/saftaja-hq/saftaja/khazina/internal/transport/proto/saftaja/dashboard/auth/v1/authpbv1connect"
+	"github.com/fidraq/fidraq/khazina/internal/app/auth"
+	fidraqcontext "github.com/fidraq/fidraq/khazina/internal/pkg/context"
+	authpbv1 "github.com/fidraq/fidraq/khazina/internal/transport/proto/fidraq/dashboard/auth/v1"
+	"github.com/fidraq/fidraq/khazina/internal/transport/proto/fidraq/dashboard/auth/v1/authpbv1connect"
 	"github.com/rs/zerolog/log"
 )
 
@@ -91,13 +91,13 @@ func (s *service) RefreshToken(ctx context.Context, r *connect.Request[authpbv1.
 }
 
 func (s *service) Logout(ctx context.Context, r *connect.Request[authpbv1.LogoutRequest]) (*connect.Response[authpbv1.LogoutResponse], error) {
-	sessionID, err := saftajacontext.SessionID(ctx)
+	sessionID, err := fidraqcontext.SessionID(ctx)
 	if err != nil {
 		log.Ctx(ctx).Error().Err(err).Msg("failed to get session id from context")
 		return nil, connect.NewError(connect.CodeUnauthenticated, nil)
 	}
 
-	customerID, err := saftajacontext.CustomerID(ctx)
+	customerID, err := fidraqcontext.CustomerID(ctx)
 	if err != nil {
 		log.Ctx(ctx).Error().Err(err).Msg("failed to get customer id from context")
 		return nil, connect.NewError(connect.CodeUnauthenticated, nil)

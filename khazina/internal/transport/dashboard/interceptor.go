@@ -8,9 +8,9 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
-	saftajacontext "github.com/saftaja-hq/saftaja/khazina/internal/pkg/context"
-	"github.com/saftaja-hq/saftaja/khazina/internal/pkg/jwt"
-	"github.com/saftaja-hq/saftaja/khazina/internal/transport/proto/saftaja/dashboard/auth/v1/authpbv1connect"
+	fidraqcontext "github.com/fidraq/fidraq/khazina/internal/pkg/context"
+	"github.com/fidraq/fidraq/khazina/internal/pkg/jwt"
+	"github.com/fidraq/fidraq/khazina/internal/transport/proto/fidraq/dashboard/auth/v1/authpbv1connect"
 	"github.com/rs/zerolog/log"
 )
 
@@ -57,14 +57,14 @@ func NewAuthTokenInterceptor(tv *jwt.Verifier) connect.UnaryInterceptorFunc {
 				log.Ctx(ctx).Error().Err(err).Msg("failed to parse subject claim as uuid")
 				return nil, connect.NewError(connect.CodeInternal, ErrInternal)
 			}
-			ctx = saftajacontext.WithCustomerID(ctx, userID)
+			ctx = fidraqcontext.WithCustomerID(ctx, userID)
 
 			sessionID, err := uuid.Parse(claims.SessionID)
 			if err != nil {
 				log.Ctx(ctx).Error().Err(err).Msg("failed to parse session id claim as uuid")
 				return nil, connect.NewError(connect.CodeInternal, ErrInternal)
 			}
-			ctx = saftajacontext.WithSessionID(ctx, sessionID)
+			ctx = fidraqcontext.WithSessionID(ctx, sessionID)
 
 			log.Ctx(ctx).Info().Msg("endpoint is authful, all is good")
 			return next(ctx, req)

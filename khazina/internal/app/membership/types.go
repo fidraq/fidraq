@@ -2,7 +2,7 @@ package membership
 
 import (
 	"github.com/google/uuid"
-	"github.com/saftaja-hq/saftaja/khazina/internal/store"
+	"github.com/fidraq/fidraq/khazina/internal/store"
 )
 
 type ProjectEnvironment string

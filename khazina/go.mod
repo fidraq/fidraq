@@ -1,4 +1,4 @@
-module github.com/saftaja-hq/saftaja/khazina
+module github.com/fidraq/fidraq/khazina
 
 go 1.25.9
 

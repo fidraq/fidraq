@@ -4,8 +4,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/saftaja-hq/saftaja/khazina/internal/pkg/ptr"
-	"github.com/saftaja-hq/saftaja/khazina/internal/store"
+	"github.com/fidraq/fidraq/khazina/internal/pkg/ptr"
+	"github.com/fidraq/fidraq/khazina/internal/store"
 	"github.com/stretchr/testify/assert"
 )
 

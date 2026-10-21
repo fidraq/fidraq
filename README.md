@@ -1,12 +1,17 @@
-# saftaja | سفتجة
+# Fidraq (formerly Saftaja) | فِضْرَق
 
 Self-hostable, open-source payments on top of MPGS (Mastercard Payment Gateway
-Services), the gateway most Gulf banks hand to merchants. Saftaja gives you hosted
+Services), the gateway most Gulf banks hand to merchants. Fidraq gives you hosted
 checkout pages with 3-D Secure, per-merchant custom domains with automatic TLS, and a
 dashboard, so you don't have to integrate MPGS by hand.
 
 > **Status:** pre-release. Card payments with 3DS work end to end. The merchant API,
 > webhooks and Apple Pay are in progress.
+
+## Why Fidraq
+
+Said FID-raq. A blend of two Arabic words: fiḍḍa (فضة), silver, and waraq (ورق), paper.
+Silver and paper: the two forms money has always taken.
 
 ## Repo layout
 
@@ -14,7 +19,6 @@ dashboard, so you don't have to integrate MPGS by hand.
 | --------- | ----------------------------------------------------------- |
 | `khazina` | Go backend: payments, hosted checkout, dashboard API        |
 | `diwan`   | Merchant dashboard (React + Vite)                           |
-| `bawaba`  | Landing page                                                |
 | `proto`   | Dashboard API definitions (Connect RPC), generated with buf |
 
 ## Getting started
@@ -56,7 +60,7 @@ mise run migrate:create <name>
 ## Deploying
 
 Pushing a version tag (`v0.1.0`) publishes the khazina image to
-`ghcr.io/saftaja-hq/saftaja/khazina`, tagged `0.1.0`, `0.1` and `latest`.
+`ghcr.io/fidraq/fidraq/khazina`, tagged `0.1.0`, `0.1` and `latest`.
 Pull requests build the image without publishing it. A Helm chart for
 self-hosting is coming.
 
@@ -64,6 +68,6 @@ self-hosting is coming.
 
 Copyright (C) 2025-2026 Yazeed AlKhalaf
 
-saftaja is free software: you can redistribute it and/or modify it under the
+Fidraq is free software: you can redistribute it and/or modify it under the
 terms of the GNU Affero General Public License, version 3 only, as published by
 the Free Software Foundation. See [LICENSE](LICENSE) for the full text.

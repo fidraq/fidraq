@@ -21,4 +21,4 @@ dap.configurations.go = {
 	},
 }
 
-print("✅ Saftaja Debug Config Loaded (Khazina)")
+print("✅ Fidraq Debug Config Loaded (Khazina)")

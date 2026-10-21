@@ -6,7 +6,7 @@ import { AppSidebar } from '@/components/AppSidebar'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { useQuery } from '@connectrpc/connect-query'
-import { getWorkspace } from '@/gen/saftaja/dashboard/workspace/v1/workspace-WorkspaceService_connectquery'
+import { getWorkspace } from '@/gen/fidraq/dashboard/workspace/v1/workspace-WorkspaceService_connectquery'
 import { m } from '@/paraglide/messages'
 import { AlertTriangle, Plus } from 'lucide-react'
 

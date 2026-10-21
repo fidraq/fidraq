@@ -3,7 +3,7 @@ import { useEffect } from 'react'
 import { useWorkspaceStore } from '@/core/workspace/store'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useQuery } from '@connectrpc/connect-query'
-import { getWorkspace } from '@/gen/saftaja/dashboard/workspace/v1/workspace-WorkspaceService_connectquery'
+import { getWorkspace } from '@/gen/fidraq/dashboard/workspace/v1/workspace-WorkspaceService_connectquery'
 
 import { SENTINEL_PROJECT_ID } from '@/core/workspace/constants'
 

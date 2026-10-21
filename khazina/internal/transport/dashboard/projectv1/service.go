@@ -8,12 +8,12 @@ import (
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 
-	"github.com/saftaja-hq/saftaja/khazina/internal/app/gateway"
-	"github.com/saftaja-hq/saftaja/khazina/internal/app/membership"
-	mpgsclient "github.com/saftaja-hq/saftaja/khazina/internal/clients/mpgs"
-	saftajacontext "github.com/saftaja-hq/saftaja/khazina/internal/pkg/context"
-	projectpbv1 "github.com/saftaja-hq/saftaja/khazina/internal/transport/proto/saftaja/dashboard/project/v1"
-	"github.com/saftaja-hq/saftaja/khazina/internal/transport/proto/saftaja/dashboard/project/v1/projectpbv1connect"
+	"github.com/fidraq/fidraq/khazina/internal/app/gateway"
+	"github.com/fidraq/fidraq/khazina/internal/app/membership"
+	mpgsclient "github.com/fidraq/fidraq/khazina/internal/clients/mpgs"
+	fidraqcontext "github.com/fidraq/fidraq/khazina/internal/pkg/context"
+	projectpbv1 "github.com/fidraq/fidraq/khazina/internal/transport/proto/fidraq/dashboard/project/v1"
+	"github.com/fidraq/fidraq/khazina/internal/transport/proto/fidraq/dashboard/project/v1/projectpbv1connect"
 )
 
 var errInternal = connect.NewError(connect.CodeInternal, errors.New("internal server error"))
@@ -31,7 +31,7 @@ func New(gateway gateway.Service, membership membership.MembershipService) proje
 }
 
 func (s *service) ListGateways(ctx context.Context, r *connect.Request[projectpbv1.ListGatewaysRequest]) (*connect.Response[projectpbv1.ListGatewaysResponse], error) {
-	customerID, err := saftajacontext.CustomerID(ctx)
+	customerID, err := fidraqcontext.CustomerID(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, nil)
 	}
@@ -69,7 +69,7 @@ func (s *service) ListGateways(ctx context.Context, r *connect.Request[projectpb
 }
 
 func (s *service) CreateGateway(ctx context.Context, r *connect.Request[projectpbv1.CreateGatewayRequest]) (*connect.Response[projectpbv1.CreateGatewayResponse], error) {
-	customerID, err := saftajacontext.CustomerID(ctx)
+	customerID, err := fidraqcontext.CustomerID(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, nil)
 	}

@@ -566,7 +566,7 @@ templ CheckoutForm(data CheckoutPageData) {
 		}
 
 		function createPaymentIntentIdempotencyKey(accountId, type) {
-			const key = `saftaja:start-payment:${INVOICE_ID}:${accountId}:${type}`;
+			const key = `fidraq:start-payment:${INVOICE_ID}:${accountId}:${type}`;
 			try {
 				let id = sessionStorage.getItem(key);
 				if (!id) {

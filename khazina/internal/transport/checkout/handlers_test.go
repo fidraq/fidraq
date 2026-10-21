@@ -12,16 +12,16 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 
-	"github.com/saftaja-hq/saftaja/khazina/internal/app/gateway"
-	gwmocks "github.com/saftaja-hq/saftaja/khazina/internal/app/gateway/mocks"
-	"github.com/saftaja-hq/saftaja/khazina/internal/app/payment"
-	paymentmocks "github.com/saftaja-hq/saftaja/khazina/internal/app/payment/mocks"
-	"github.com/saftaja-hq/saftaja/khazina/internal/app/tenant"
-	tenantmocks "github.com/saftaja-hq/saftaja/khazina/internal/app/tenant/mocks"
-	saftajacontext "github.com/saftaja-hq/saftaja/khazina/internal/pkg/context"
-	"github.com/saftaja-hq/saftaja/khazina/internal/pkg/money"
-	"github.com/saftaja-hq/saftaja/khazina/internal/pkg/ptr"
-	"github.com/saftaja-hq/saftaja/khazina/internal/transport/checkout"
+	"github.com/fidraq/fidraq/khazina/internal/app/gateway"
+	gwmocks "github.com/fidraq/fidraq/khazina/internal/app/gateway/mocks"
+	"github.com/fidraq/fidraq/khazina/internal/app/payment"
+	paymentmocks "github.com/fidraq/fidraq/khazina/internal/app/payment/mocks"
+	"github.com/fidraq/fidraq/khazina/internal/app/tenant"
+	tenantmocks "github.com/fidraq/fidraq/khazina/internal/app/tenant/mocks"
+	fidraqcontext "github.com/fidraq/fidraq/khazina/internal/pkg/context"
+	"github.com/fidraq/fidraq/khazina/internal/pkg/money"
+	"github.com/fidraq/fidraq/khazina/internal/pkg/ptr"
+	"github.com/fidraq/fidraq/khazina/internal/transport/checkout"
 )
 
 // --------------------------------------------------------------------------
@@ -73,7 +73,7 @@ func (f *fixture) get(path string) *httptest.ResponseRecorder {
 
 func (f *fixture) getWithProject(path string, project *tenant.Project) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(http.MethodGet, path, nil)
-	ctx := saftajacontext.WithProject(req.Context(), project)
+	ctx := fidraqcontext.WithProject(req.Context(), project)
 	req = req.WithContext(ctx)
 	w := httptest.NewRecorder()
 	f.router.ServeHTTP(w, req)
@@ -92,7 +92,7 @@ func (f *fixture) post(path string, body any) *httptest.ResponseRecorder {
 func (f *fixture) postWithProject(path string, body any, project *tenant.Project) *httptest.ResponseRecorder {
 	b, _ := json.Marshal(body)
 	req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(b))
-	ctx := saftajacontext.WithProject(req.Context(), project)
+	ctx := fidraqcontext.WithProject(req.Context(), project)
 	req = req.WithContext(ctx)
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -258,7 +258,7 @@ func TestCreatePaymentIntentHandler_Success(t *testing.T) {
 	}
 	b, _ := json.Marshal(body)
 	req := httptest.NewRequest(http.MethodPost, "/checkout/"+invoiceID.String()+"/payment-intents", bytes.NewReader(b))
-	ctx := saftajacontext.WithProject(req.Context(), project)
+	ctx := fidraqcontext.WithProject(req.Context(), project)
 	req = req.WithContext(ctx)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "TestAgent")
@@ -317,7 +317,7 @@ func TestCreatePaymentIntentHandler_InvalidRequest(t *testing.T) {
 	}
 	b, _ := json.Marshal(body)
 	req := httptest.NewRequest(http.MethodPost, "/checkout/"+invoiceID.String()+"/payment-intents", bytes.NewReader(b))
-	ctx := saftajacontext.WithProject(req.Context(), project)
+	ctx := fidraqcontext.WithProject(req.Context(), project)
 	req = req.WithContext(ctx)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "TestAgent")
@@ -353,7 +353,7 @@ func TestCreatePaymentIntentHandler_AlreadyPaid(t *testing.T) {
 	}
 	b, _ := json.Marshal(body)
 	req := httptest.NewRequest(http.MethodPost, "/checkout/"+invoiceID.String()+"/payment-intents", bytes.NewReader(b))
-	ctx := saftajacontext.WithProject(req.Context(), project)
+	ctx := fidraqcontext.WithProject(req.Context(), project)
 	req = req.WithContext(ctx)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "TestAgent")
@@ -449,7 +449,7 @@ func TestAuthenticateCardholderHandler(t *testing.T) {
 	encodedBody, _ := json.Marshal(body)
 	path := "/checkout/" + invoiceID.String() + "/payment-intents/" + paymentIntentID.String() + "/card-authentication/authenticate"
 	req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(encodedBody))
-	req = req.WithContext(saftajacontext.WithProject(req.Context(), project))
+	req = req.WithContext(fidraqcontext.WithProject(req.Context(), project))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/html,application/json")
 	req.Header.Set("User-Agent", "TestAgent")

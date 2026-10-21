@@ -14,8 +14,8 @@ const (
 type FromEmail string
 
 const (
-	FromEmail_NoReplyEmail FromEmail = "Saftaja <no-reply@saftaja.com>"
-	FromEmail_HelloEmail   FromEmail = "Saftaja <hello@saftaja.com>"
+	FromEmail_NoReplyEmail FromEmail = "Fidraq <no-reply@fidraq.com>"
+	FromEmail_HelloEmail   FromEmail = "Fidraq <hello@fidraq.com>"
 )
 
 func MapStringToFromEmail(from string) FromEmail {

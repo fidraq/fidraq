@@ -2,7 +2,7 @@ import { Code, ConnectError, type Interceptor } from "@connectrpc/connect";
 import { TokenVault } from "../session/token-vault";
 import { useSessionStore } from "../session/store";
 import { refreshClient } from "./api-client";
-import { AuthService } from "../../gen/saftaja/dashboard/auth/v1/auth_pb";
+import { AuthService } from "../../gen/fidraq/dashboard/auth/v1/auth_pb";
 
 const authlessProcedures: string[] = [
   `/${AuthService.typeName}/${AuthService.method.initiateAuth.name}`,

@@ -25,32 +25,32 @@ sql:
 
           - column: "invoices.amount_minor"
             go_type:
-              import: "github.com/saftaja-hq/saftaja/khazina/internal/pkg/money"
+              import: "github.com/fidraq/fidraq/khazina/internal/pkg/money"
               type: "MinorAmount"
 
           - column: "invoice_items.unit_price_minor"
             go_type:
-              import: "github.com/saftaja-hq/saftaja/khazina/internal/pkg/money"
+              import: "github.com/fidraq/fidraq/khazina/internal/pkg/money"
               type: "MinorAmount"
 
           - column: "invoice_items.amount_minor"
             go_type:
-              import: "github.com/saftaja-hq/saftaja/khazina/internal/pkg/money"
+              import: "github.com/fidraq/fidraq/khazina/internal/pkg/money"
               type: "MinorAmount"
 
           - column: "payment_intents.amount_minor"
             go_type:
-              import: "github.com/saftaja-hq/saftaja/khazina/internal/pkg/money"
+              import: "github.com/fidraq/fidraq/khazina/internal/pkg/money"
               type: "MinorAmount"
 
           - column: "invoices.currency"
             go_type:
-              import: "github.com/saftaja-hq/saftaja/khazina/internal/pkg/money"
+              import: "github.com/fidraq/fidraq/khazina/internal/pkg/money"
               type: "Currency"
 
           - column: "payment_intents.currency"
             go_type:
-              import: "github.com/saftaja-hq/saftaja/khazina/internal/pkg/money"
+              import: "github.com/fidraq/fidraq/khazina/internal/pkg/money"
               type: "Currency"
 
           - column: "projects.environment"
