@@ -19,7 +19,6 @@ Silver and paper: the two forms money has always taken.
 | --------- | ----------------------------------------------------------- |
 | `khazina` | Go backend: payments, hosted checkout, dashboard API        |
 | `diwan`   | Merchant dashboard (React + Vite)                           |
-| `bawaba`  | Landing page                                                |
 | `proto`   | Dashboard API definitions (Connect RPC), generated with buf |
 
 ## Getting started
