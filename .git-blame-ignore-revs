@@ -1,0 +1,14 @@
+# Mechanical renames: module paths, imports and project name only.
+# Enable locally with: git config blame.ignoreRevsFile .git-blame-ignore-revs
+
+# rename the project module
+1e1786721a94b6fe3675923a6231123cb69613cd
+
+# rename to /khazina the module
+d2efe4643a1cb6d72d27a97e3cf7d502e7daa0e6
+
+# chore: move repo to github.com/saftaja-hq/saftaja
+12270938a83b2e816d2c9a89687a1369af81b2fd
+
+# chore!: rebrand Saftaja to Fidraq
+95425a354f90ce1e30e5f8bd0c09a986eca5feb2
