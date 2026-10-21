@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"strings"
 
-	saftajacontext "github.com/saftaja-hq/saftaja/khazina/internal/pkg/context"
-	"github.com/saftaja-hq/saftaja/khazina/internal/app/tenant"
+	fidraqcontext "github.com/fidraq/fidraq/khazina/internal/pkg/context"
+	"github.com/fidraq/fidraq/khazina/internal/app/tenant"
 )
 
 func TenantResolver(svc tenant.Service) func(http.Handler) http.Handler {
@@ -18,7 +18,7 @@ func TenantResolver(svc tenant.Service) func(http.Handler) http.Handler {
 
 			project, err := svc.GetProjectByDomain(r.Context(), host)
 			if err == nil && project != nil {
-				ctx := saftajacontext.WithProject(r.Context(), project)
+				ctx := fidraqcontext.WithProject(r.Context(), project)
 				r = r.WithContext(ctx)
 			}
 

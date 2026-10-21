@@ -8,9 +8,9 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/saftaja-hq/saftaja/khazina/internal/pkg/money"
-	"github.com/saftaja-hq/saftaja/khazina/internal/store"
-	"github.com/saftaja-hq/saftaja/khazina/internal/testutil"
+	"github.com/fidraq/fidraq/khazina/internal/pkg/money"
+	"github.com/fidraq/fidraq/khazina/internal/store"
+	"github.com/fidraq/fidraq/khazina/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -216,7 +216,7 @@ func TestGetInvoice_Success(t *testing.T) {
 	assert.Equal(t, uuidProject, resp.Invoice.ProjectID)
 	assert.Equal(t, InvoiceStatusPending, resp.Invoice.Status)
 	assert.Equal(t, money.CurrencyBHD, resp.Invoice.Currency)
-	assert.Equal(t, "testcustomer@saftaja.com", resp.Invoice.CustomerEmail)
+	assert.Equal(t, "testcustomer@fidraq.com", resp.Invoice.CustomerEmail)
 	require.Len(t, resp.Invoice.Items, 1)
 	assert.Equal(t, "test item", resp.Invoice.Items[0].Name)
 }

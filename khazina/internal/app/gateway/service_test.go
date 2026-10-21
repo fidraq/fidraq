@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/saftaja-hq/saftaja/khazina/internal/store"
-	"github.com/saftaja-hq/saftaja/khazina/internal/testutil"
+	"github.com/fidraq/fidraq/khazina/internal/store"
+	"github.com/fidraq/fidraq/khazina/internal/testutil"
 	"github.com/stretchr/testify/require"
 )
 

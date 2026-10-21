@@ -34,8 +34,8 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { useLanguage } from "./LanguageProvider"
 import { useSessionStore } from "@/core/session/store"
 import { useMutation } from "@connectrpc/connect-query"
-import { logout as logoutRpc } from "@/gen/saftaja/dashboard/auth/v1/auth-AuthService_connectquery"
-import type { Organization } from "@/gen/saftaja/dashboard/workspace/v1/workspace_pb"
+import { logout as logoutRpc } from "@/gen/fidraq/dashboard/auth/v1/auth-AuthService_connectquery"
+import type { Organization } from "@/gen/fidraq/dashboard/workspace/v1/workspace_pb"
 
 export function AppSidebar({ organizations }: { organizations: Organization[] }) {
   const { dir } = useLanguage()

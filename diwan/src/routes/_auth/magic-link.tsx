@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useMutation } from '@connectrpc/connect-query'
-import { completeAuth } from '../../gen/saftaja/dashboard/auth/v1/auth-AuthService_connectquery'
+import { completeAuth } from '../../gen/fidraq/dashboard/auth/v1/auth-AuthService_connectquery'
 import { useSessionStore } from '../../core/session/store'
 import { SENTINEL_PROJECT_ID } from '../../core/workspace/constants'
 import { Button } from "@/components/ui/button"

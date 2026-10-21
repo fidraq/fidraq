@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/fidraq/fidraq/khazina/internal/pkg/money"
 	"github.com/google/uuid"
-	"github.com/saftaja-hq/saftaja/khazina/internal/pkg/money"
 )
 
 type OrganizationRole string

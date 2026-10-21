@@ -5,7 +5,7 @@
 	handle /config.js {
 		header Content-Type "text/javascript; charset=utf-8"
 		header Cache-Control "no-store"
-		respond `window.__SAFTAJA_CONFIG__ = { apiUrl: "{$API_URL}" };` 200
+		respond `window.__FIDRAQ_CONFIG__ = { apiUrl: "{$API_URL}" };` 200
 	}
 
 	handle {

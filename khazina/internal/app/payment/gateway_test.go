@@ -3,8 +3,8 @@ package payment
 import (
 	"testing"
 
-	"github.com/saftaja-hq/saftaja/khazina/internal/pkg/crypto"
-	"github.com/saftaja-hq/saftaja/khazina/internal/store"
+	"github.com/fidraq/fidraq/khazina/internal/pkg/crypto"
+	"github.com/fidraq/fidraq/khazina/internal/store"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

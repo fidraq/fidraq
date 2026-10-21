@@ -6,8 +6,8 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
-	"github.com/saftaja-hq/saftaja/khazina/internal/pkg/money"
-	"github.com/saftaja-hq/saftaja/khazina/internal/store"
+	"github.com/fidraq/fidraq/khazina/internal/pkg/money"
+	"github.com/fidraq/fidraq/khazina/internal/store"
 )
 
 type GatewayResolver interface {

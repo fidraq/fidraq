@@ -4,7 +4,7 @@
   currency: BHD
   status: pending
   external_id: null
-  customer_email: testcustomer@saftaja.com
+  customer_email: testcustomer@fidraq.com
   customer_name: "test customer"
   description: "a really cool invoice :D"
   paid_at: null
@@ -18,7 +18,7 @@
   currency: BHD
   status: pending
   external_id: null
-  customer_email: noitems@saftaja.com
+  customer_email: noitems@fidraq.com
   customer_name: "no items"
   description: "bad invoice with no line items"
   paid_at: null

@@ -1,9 +1,9 @@
 package workspacev1
 
 import (
-	"github.com/saftaja-hq/saftaja/khazina/internal/app/membership"
-	"github.com/saftaja-hq/saftaja/khazina/internal/store"
-	workspacepbv1 "github.com/saftaja-hq/saftaja/khazina/internal/transport/proto/saftaja/dashboard/workspace/v1"
+	"github.com/fidraq/fidraq/khazina/internal/app/membership"
+	"github.com/fidraq/fidraq/khazina/internal/store"
+	workspacepbv1 "github.com/fidraq/fidraq/khazina/internal/transport/proto/fidraq/dashboard/workspace/v1"
 )
 
 func mapMembershipOrgWithProjsToProto(orgWithProjs membership.OrganizationWithProjects) *workspacepbv1.Organization {

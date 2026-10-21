@@ -7,7 +7,7 @@ package mocks
 import (
 	"context"
 
-	"github.com/saftaja-hq/saftaja/khazina/internal/app/payment"
+	"github.com/fidraq/fidraq/khazina/internal/app/payment"
 	mock "github.com/stretchr/testify/mock"
 )
 

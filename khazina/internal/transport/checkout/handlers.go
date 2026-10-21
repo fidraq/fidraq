@@ -12,12 +12,12 @@ import (
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 
-	"github.com/saftaja-hq/saftaja/khazina/internal/app/gateway"
-	"github.com/saftaja-hq/saftaja/khazina/internal/app/payment"
-	"github.com/saftaja-hq/saftaja/khazina/internal/app/tenant"
-	mpgsclient "github.com/saftaja-hq/saftaja/khazina/internal/clients/mpgs"
-	saftajacontext "github.com/saftaja-hq/saftaja/khazina/internal/pkg/context"
-	"github.com/saftaja-hq/saftaja/khazina/internal/transport/checkout/templfiles"
+	"github.com/fidraq/fidraq/khazina/internal/app/gateway"
+	"github.com/fidraq/fidraq/khazina/internal/app/payment"
+	"github.com/fidraq/fidraq/khazina/internal/app/tenant"
+	mpgsclient "github.com/fidraq/fidraq/khazina/internal/clients/mpgs"
+	fidraqcontext "github.com/fidraq/fidraq/khazina/internal/pkg/context"
+	"github.com/fidraq/fidraq/khazina/internal/transport/checkout/templfiles"
 )
 
 type handlers struct {
@@ -39,7 +39,7 @@ func New(paymentService payment.Service, tenantService tenant.Service, gatewaySe
 func (h *handlers) CheckoutPageHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	project := saftajacontext.ProjectFromContext(ctx)
+	project := fidraqcontext.ProjectFromContext(ctx)
 	if project == nil {
 		log.Ctx(ctx).Info().Str("host", r.Host).Msg("checkout accessed via unregistered domain")
 		http.Error(w, "not found", http.StatusNotFound)
@@ -178,7 +178,7 @@ func paymentMethodLabel(method string) string {
 func (h *handlers) CreatePaymentIntentHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	project := saftajacontext.ProjectFromContext(ctx)
+	project := fidraqcontext.ProjectFromContext(ctx)
 	if project == nil {
 		respondError(w, r, ErrCodeInvoiceNotFound, templfiles.MsgInvoiceNotFound, http.StatusNotFound)
 		return
@@ -230,7 +230,7 @@ func (h *handlers) CreatePaymentIntentHandler(w http.ResponseWriter, r *http.Req
 func (h *handlers) PrepareCardAuthenticationHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	project := saftajacontext.ProjectFromContext(ctx)
+	project := fidraqcontext.ProjectFromContext(ctx)
 	if project == nil {
 		respondError(w, r, ErrCodeInvoiceNotFound, templfiles.MsgInvoiceNotFound, http.StatusNotFound)
 		return
@@ -268,7 +268,7 @@ func (h *handlers) PrepareCardAuthenticationHandler(w http.ResponseWriter, r *ht
 func (h *handlers) AuthenticateCardholderHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	project := saftajacontext.ProjectFromContext(ctx)
+	project := fidraqcontext.ProjectFromContext(ctx)
 	if project == nil {
 		respondError(w, r, ErrCodeInvoiceNotFound, templfiles.MsgInvoiceNotFound, http.StatusNotFound)
 		return
@@ -353,7 +353,7 @@ func (h *handlers) AuthenticateCardholderHandler(w http.ResponseWriter, r *http.
 func (h *handlers) CardAuthenticationReturnHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	project := saftajacontext.ProjectFromContext(ctx)
+	project := fidraqcontext.ProjectFromContext(ctx)
 	if project == nil {
 		respondError(w, r, ErrCodeInvoiceNotFound, templfiles.MsgInvoiceNotFound, http.StatusNotFound)
 		return
@@ -377,7 +377,7 @@ func (h *handlers) CardAuthenticationReturnHandler(w http.ResponseWriter, r *htt
 func (h *handlers) VerifyCardAuthenticationHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	project := saftajacontext.ProjectFromContext(ctx)
+	project := fidraqcontext.ProjectFromContext(ctx)
 	if project == nil {
 		respondError(w, r, ErrCodeInvoiceNotFound, templfiles.MsgInvoiceNotFound, http.StatusNotFound)
 		return
@@ -415,7 +415,7 @@ func (h *handlers) VerifyCardAuthenticationHandler(w http.ResponseWriter, r *htt
 func (h *handlers) CapturePaymentIntentHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	project := saftajacontext.ProjectFromContext(ctx)
+	project := fidraqcontext.ProjectFromContext(ctx)
 	if project == nil {
 		respondError(w, r, ErrCodeInvoiceNotFound, templfiles.MsgInvoiceNotFound, http.StatusNotFound)
 		return

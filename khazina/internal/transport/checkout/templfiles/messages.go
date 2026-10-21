@@ -79,8 +79,8 @@ var (
 		language.Arabic:  "شكراً لك على الشراء!",
 	}
 	LblPoweredBy = LocalizedString{
-		language.English: "Powered by Saftaja",
-		language.Arabic:  "مدعوم من سفتجة",
+		language.English: "Powered by Fidraq",
+		language.Arabic:  "مدعوم من فضرق",
 	}
 	LblAmountDue = LocalizedString{
 		language.English: "Amount Due",

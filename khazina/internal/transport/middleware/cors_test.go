@@ -8,8 +8,8 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/saftaja-hq/saftaja/khazina/internal/app/tenant/mocks"
-	"github.com/saftaja-hq/saftaja/khazina/internal/transport/middleware"
+	"github.com/fidraq/fidraq/khazina/internal/app/tenant/mocks"
+	"github.com/fidraq/fidraq/khazina/internal/transport/middleware"
 )
 
 func TestDynamicCORS_ValidOrigin(t *testing.T) {

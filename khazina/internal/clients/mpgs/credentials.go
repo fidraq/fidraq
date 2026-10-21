@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/saftaja-hq/saftaja/khazina/internal/pkg/crypto"
+	"github.com/fidraq/fidraq/khazina/internal/pkg/crypto"
 )
 
 // Config holds public gateway configuration stored in the config column (JSONB, plain text).

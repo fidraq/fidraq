@@ -1,6 +1,6 @@
 
-const ACCESS_TOKEN_KEY = "saftaja_auth_access_token";
-const REFRESH_TOKEN_KEY = "saftaja_auth_refresh_token";
+const ACCESS_TOKEN_KEY = "fidraq_auth_access_token";
+const REFRESH_TOKEN_KEY = "fidraq_auth_refresh_token";
 
 export const TokenVault = {
   getAccess: (): string | null => {

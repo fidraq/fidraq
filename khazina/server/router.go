@@ -11,12 +11,12 @@ import (
 	"github.com/rs/cors"
 	"github.com/rs/zerolog/log"
 
-	"github.com/saftaja-hq/saftaja/khazina/internal/config"
-	"github.com/saftaja-hq/saftaja/khazina/internal/transport/checkout"
-	saftamiddleware "github.com/saftaja-hq/saftaja/khazina/internal/transport/middleware"
-	"github.com/saftaja-hq/saftaja/khazina/internal/transport/proto/saftaja/dashboard/auth/v1/authpbv1connect"
-	"github.com/saftaja-hq/saftaja/khazina/internal/transport/proto/saftaja/dashboard/project/v1/projectpbv1connect"
-	"github.com/saftaja-hq/saftaja/khazina/internal/transport/proto/saftaja/dashboard/workspace/v1/workspacepbv1connect"
+	"github.com/fidraq/fidraq/khazina/internal/config"
+	"github.com/fidraq/fidraq/khazina/internal/transport/checkout"
+	saftamiddleware "github.com/fidraq/fidraq/khazina/internal/transport/middleware"
+	"github.com/fidraq/fidraq/khazina/internal/transport/proto/fidraq/dashboard/auth/v1/authpbv1connect"
+	"github.com/fidraq/fidraq/khazina/internal/transport/proto/fidraq/dashboard/project/v1/projectpbv1connect"
+	"github.com/fidraq/fidraq/khazina/internal/transport/proto/fidraq/dashboard/workspace/v1/workspacepbv1connect"
 )
 
 func BuildRouter(cfg *config.Config, deps *dependencies) *chi.Mux {

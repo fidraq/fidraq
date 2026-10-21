@@ -18,7 +18,7 @@ mockery = "3.7.0"
 
 # Dev defaults only. Production sets the same variables in its own environment.
 [env]
-DATABASE_URL = "postgres://saftaja:saftaja@localhost:5432/saftaja?sslmode=disable"
+DATABASE_URL = "postgres://fidraq:fidraq@localhost:5432/fidraq?sslmode=disable"
 PORT = "8080"
 DASHBOARD_URL = "http://localhost:5173"
 EMAILER = "stdout"

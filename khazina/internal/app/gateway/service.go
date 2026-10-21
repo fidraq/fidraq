@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 
-	mpgsclient "github.com/saftaja-hq/saftaja/khazina/internal/clients/mpgs"
-	"github.com/saftaja-hq/saftaja/khazina/internal/pkg/crypto"
-	"github.com/saftaja-hq/saftaja/khazina/internal/store"
+	mpgsclient "github.com/fidraq/fidraq/khazina/internal/clients/mpgs"
+	"github.com/fidraq/fidraq/khazina/internal/pkg/crypto"
+	"github.com/fidraq/fidraq/khazina/internal/store"
 )
 
 type service struct {
