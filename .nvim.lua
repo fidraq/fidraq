@@ -1,4 +1,7 @@
-local dap = require("dap")
+local ok, dap = pcall(require, "dap")
+if not ok then
+	return
+end
 
 -- dlv is pinned in mise.toml. Start nvim from the repo so mise's env
 -- (DATABASE_URL, secrets from mise.local.toml, ...) reaches khazina.
