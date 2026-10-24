@@ -1,15 +1,38 @@
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
-CREATE OR REPLACE FUNCTION update_updated_at_column()
-RETURNS TRIGGER AS $$
-BEGIN
-    NEW.updated_at = NOW();
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
+-- ============================================================================
+-- TYPES
+-- ============================================================================
+
+CREATE TYPE environment AS ENUM ('sandbox', 'production');
+CREATE TYPE organization_role AS ENUM ('owner', 'admin', 'member');
+CREATE TYPE gateway_type AS ENUM ('mpgs');
+CREATE TYPE payment_intent_status AS ENUM (
+    'requires_payment_method',
+    'requires_action',
+    'processing',
+    'succeeded',
+    'canceled'
+);
+CREATE TYPE checkout_session_status AS ENUM ('open', 'complete', 'expired', 'canceled');
+CREATE TYPE payment_method_type AS ENUM ('card', 'apple_pay');
+CREATE TYPE payment_attempt_status AS ENUM (
+    'created',
+    'requires_action',
+    'processing',
+    'capturing',
+    'succeeded',
+    'failed',
+    'expired',
+    'canceled'
+);
+CREATE TYPE payment_intent_cancellation_reason AS ENUM ('merchant_canceled', 'abandoned');
+CREATE TYPE payment_attempt_cancellation_reason AS ENUM ('superseded', 'merchant_canceled', 'customer_canceled');
+CREATE TYPE authentication_method AS ENUM ('three_d_secure', 'device', 'none');
+CREATE TYPE authentication_status AS ENUM ('authenticated', 'attempted', 'failed', 'unavailable');
 
 -- ============================================================================
--- ORGANIZATIONS & PROJECTS
+-- ORGANIZATIONS & ACCOUNTS
 -- ============================================================================
 
 CREATE TABLE organizations (
@@ -22,32 +45,22 @@ CREATE TABLE organizations (
     deleted_at TIMESTAMPTZ
 );
 
-CREATE TRIGGER update_organizations_updated_at BEFORE UPDATE ON organizations
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TABLE projects (
+CREATE TABLE accounts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     organization_id UUID NOT NULL REFERENCES organizations(id),
 
     name VARCHAR(100) NOT NULL,
-    environment VARCHAR(20) NOT NULL DEFAULT 'sandbox', -- sandbox, production
-    custom_domain VARCHAR(255) UNIQUE,
 
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    deleted_at TIMESTAMPTZ,
-
-    UNIQUE (organization_id, environment)
+    deleted_at TIMESTAMPTZ
 );
-
-CREATE TRIGGER update_projects_updated_at BEFORE UPDATE ON projects
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- ============================================================================
 -- DASHBOARD USERS & AUTH
 -- ============================================================================
 
-CREATE TABLE customer (
+CREATE TABLE users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
     name VARCHAR(100) NOT NULL,
@@ -58,9 +71,9 @@ CREATE TABLE customer (
     deleted_at TIMESTAMPTZ
 );
 
-CREATE TABLE customer_session (
+CREATE TABLE user_sessions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    customer_id UUID NOT NULL REFERENCES customer(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 
     current_jti_hash BYTEA NOT NULL,
     expires_at TIMESTAMPTZ NOT NULL,
@@ -68,7 +81,7 @@ CREATE TABLE customer_session (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE auth_intent (
+CREATE TABLE auth_intents (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
     email VARCHAR(320) UNIQUE NOT NULL,
@@ -78,89 +91,49 @@ CREATE TABLE auth_intent (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TYPE organization_role AS ENUM ('owner', 'admin', 'member');
-
-CREATE TABLE organization_customer (
+CREATE TABLE organization_members (
     organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-    customer_id UUID NOT NULL REFERENCES customer(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 
     role organization_role NOT NULL,
 
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
-    PRIMARY KEY (organization_id, customer_id)
+    PRIMARY KEY (organization_id, user_id)
 );
 
 -- ============================================================================
--- GATEWAY ACCOUNTS
+-- GATEWAYS
 -- ============================================================================
 
-CREATE TABLE gateway_accounts (
+CREATE TABLE gateways (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    project_id UUID NOT NULL REFERENCES projects(id),
+    account_id UUID NOT NULL REFERENCES accounts(id),
+    environment environment NOT NULL,
 
-    connector_type VARCHAR(50) NOT NULL, -- mpgs
-    account_name VARCHAR(100) NOT NULL,
+    type gateway_type NOT NULL,
+    name VARCHAR(100) NOT NULL,
 
-    -- public info (base_url, merchant_id)
+    -- What the merchant entered (for MPGS: host and merchant id); fixed once created.
     config JSONB NOT NULL DEFAULT '{}',
-    -- encrypted private info (api_password)
     secret BYTEA NOT NULL,
+    -- What verification discovered from the gateway (card brands, currencies).
+    capabilities JSONB NOT NULL DEFAULT '{}',
+    capabilities_checked_at TIMESTAMPTZ,
 
-    is_active BOOLEAN NOT NULL DEFAULT true,
-
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    deleted_at TIMESTAMPTZ
-);
-
-CREATE TRIGGER update_gateway_accounts_updated_at BEFORE UPDATE ON gateway_accounts
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
--- ============================================================================
--- INVOICES
--- ============================================================================
-
-CREATE TABLE invoices (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    project_id UUID NOT NULL REFERENCES projects(id),
-
-    amount_minor BIGINT NOT NULL,
-    currency VARCHAR(3) NOT NULL DEFAULT 'BHD',
-
-    status VARCHAR(30) NOT NULL DEFAULT 'pending', -- pending, paid, cancelled
-
-    external_id VARCHAR(100),
-    customer_email VARCHAR(255),
-    customer_name VARCHAR(100),
-    description TEXT,
-
-    paid_at TIMESTAMPTZ,
+    is_active BOOLEAN NOT NULL DEFAULT false,
 
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     deleted_at TIMESTAMPTZ,
 
-    UNIQUE (project_id, external_id),
-    CONSTRAINT paid_invoices_have_paid_at CHECK (status != 'paid' OR paid_at IS NOT NULL)
+    CHECK (NOT is_active OR capabilities_checked_at IS NOT NULL),
+
+    UNIQUE (id, account_id, environment)
 );
 
-CREATE TRIGGER update_invoices_updated_at BEFORE UPDATE ON invoices
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TABLE invoice_items (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    invoice_id UUID NOT NULL REFERENCES invoices(id),
-
-    name VARCHAR(255) NOT NULL,
-    description TEXT,
-
-    quantity INTEGER NOT NULL DEFAULT 1,
-    unit_price_minor BIGINT NOT NULL,
-    amount_minor BIGINT NOT NULL,
-
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
+CREATE UNIQUE INDEX idx_gateways_one_active ON gateways (account_id, environment)
+    WHERE is_active AND deleted_at IS NULL;
 
 -- ============================================================================
 -- PAYMENT INTENTS
@@ -168,65 +141,192 @@ CREATE TABLE invoice_items (
 
 CREATE TABLE payment_intents (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    invoice_id UUID NOT NULL REFERENCES invoices(id),
-    project_id UUID NOT NULL REFERENCES projects(id),
-    gateway_account_id UUID NOT NULL REFERENCES gateway_accounts(id),
+    account_id UUID NOT NULL REFERENCES accounts(id),
+    environment environment NOT NULL,
 
-    amount_minor BIGINT NOT NULL,
-    currency VARCHAR(3) NOT NULL,
+    amount_minor BIGINT NOT NULL CHECK (amount_minor > 0),
+    currency VARCHAR(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
 
-    -- created, ready_to_authenticate, awaiting_authentication_result,
-    -- ready_to_capture, capturing, succeeded, failed
-    status VARCHAR(30) NOT NULL DEFAULT 'created',
-    payment_method VARCHAR(30) NOT NULL DEFAULT 'card', -- card, apple_pay
+    status payment_intent_status NOT NULL DEFAULT 'requires_payment_method',
+    cancellation_reason payment_intent_cancellation_reason,
 
-    -- gateway-side setup handle, e.g. the MPGS session id
-    gateway_setup_reference VARCHAR(100),
+    description TEXT,
+    external_id VARCHAR(255),
+
+    succeeded_at TIMESTAMPTZ,
+    canceled_at TIMESTAMPTZ,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CHECK (status != 'succeeded' OR succeeded_at IS NOT NULL),
+    CHECK (status != 'canceled' OR canceled_at IS NOT NULL),
+    CHECK ((status = 'canceled') = (cancellation_reason IS NOT NULL)),
+
+    UNIQUE (id, account_id, environment)
+);
+
+CREATE INDEX idx_payment_intents_external_id ON payment_intents (account_id, environment, external_id)
+    WHERE external_id IS NOT NULL;
+
+CREATE INDEX idx_payment_intents_list ON payment_intents (account_id, environment, created_at DESC);
+
+-- ============================================================================
+-- PAYMENT LINKS
+-- ============================================================================
+
+CREATE TABLE payment_links (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    account_id UUID NOT NULL REFERENCES accounts(id),
+    environment environment NOT NULL,
+
+    amount_minor BIGINT NOT NULL CHECK (amount_minor > 0),
+    currency VARCHAR(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
+    description TEXT NOT NULL,
+
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    -- NULL means unlimited; a slot is taken when a capture starts.
+    max_payments INT CHECK (max_payments > 0),
+    paid_count INT NOT NULL DEFAULT 0 CHECK (paid_count >= 0),
+    expires_at TIMESTAMPTZ,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CHECK (max_payments IS NULL OR paid_count <= max_payments),
+
+    UNIQUE (id, account_id, environment)
+);
+
+-- ============================================================================
+-- CHECKOUT SESSIONS
+-- ============================================================================
+
+CREATE TABLE checkout_sessions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    account_id UUID NOT NULL,
+    environment environment NOT NULL,
+    payment_intent_id UUID NOT NULL UNIQUE,
+    payment_link_id UUID,
+
+    status checkout_session_status NOT NULL DEFAULT 'open',
+
+    customer_email VARCHAR(320),
+    customer_name VARCHAR(100),
+
+    expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '24 hours'),
+    completed_at TIMESTAMPTZ,
+    canceled_at TIMESTAMPTZ,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CHECK (status != 'complete' OR completed_at IS NOT NULL),
+    CHECK (status != 'canceled' OR canceled_at IS NOT NULL),
+
+    FOREIGN KEY (payment_intent_id, account_id, environment)
+        REFERENCES payment_intents(id, account_id, environment),
+    FOREIGN KEY (payment_link_id, account_id, environment)
+        REFERENCES payment_links(id, account_id, environment)
+);
+
+CREATE INDEX idx_checkout_sessions_payment_link ON checkout_sessions (payment_link_id)
+    WHERE payment_link_id IS NOT NULL;
+
+-- ============================================================================
+-- PAYMENT ATTEMPTS
+-- ============================================================================
+
+CREATE TABLE payment_attempts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    account_id UUID NOT NULL,
+    environment environment NOT NULL,
+    payment_intent_id UUID NOT NULL,
+    gateway_id UUID NOT NULL,
+
+    -- An attempt always charges its intent's amount and currency.
+    payment_method_type payment_method_type NOT NULL,
+    status payment_attempt_status NOT NULL DEFAULT 'created',
+    cancellation_reason payment_attempt_cancellation_reason,
+
+    -- The gateway order id is this attempt's id; gateway_data is the adapter's private state.
+    gateway_data JSONB NOT NULL DEFAULT '{"v": 1}',
+    -- What the customer must do now while requires_action; safe to send to the browser.
+    next_action JSONB,
+    -- What we show for this method, normalized by the adapter: card brand, last 4, ...
+    payment_method_details JSONB,
+
+    authentication_method authentication_method,
+    authentication_status authentication_status,
+    eci VARCHAR(2),
+    liability_shift BOOLEAN,
+
+    failure_code VARCHAR(50),
 
     payer_ip VARCHAR(50) NOT NULL,
     payer_user_agent TEXT NOT NULL,
 
     idempotency_key VARCHAR(64) NOT NULL,
 
-    expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '30 minutes'),
+    expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '15 minutes'),
 
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    deleted_at TIMESTAMPTZ
+
+    CHECK ((status = 'canceled') = (cancellation_reason IS NOT NULL)),
+
+    UNIQUE (account_id, environment, idempotency_key),
+    UNIQUE (id, account_id, environment),
+    UNIQUE (id, payment_intent_id),
+    FOREIGN KEY (payment_intent_id, account_id, environment)
+        REFERENCES payment_intents(id, account_id, environment),
+    FOREIGN KEY (gateway_id, account_id, environment)
+        REFERENCES gateways(id, account_id, environment)
 );
 
-CREATE UNIQUE INDEX idx_payment_intents_idempotency_key
-    ON payment_intents (invoice_id, idempotency_key)
-    WHERE idempotency_key IS NOT NULL;
+CREATE INDEX idx_payment_attempts_payment_intent ON payment_attempts (payment_intent_id);
 
-CREATE TRIGGER update_payment_intents_updated_at BEFORE UPDATE ON payment_intents
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE UNIQUE INDEX idx_payment_attempts_one_capture_per_intent ON payment_attempts (payment_intent_id)
+    WHERE status IN ('capturing', 'succeeded');
+
+CREATE INDEX idx_payment_attempts_capturing ON payment_attempts (updated_at)
+    WHERE status = 'capturing';
 
 -- ============================================================================
--- GATEWAY OPERATIONS
+-- GATEWAY REQUESTS
 -- ============================================================================
 
-CREATE TABLE gateway_operations (
+-- Every HTTP call to a gateway, recorded by the adapters' HTTP transport. A log for
+-- people and disputes; payment logic never reads it.
+CREATE TABLE gateway_requests (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    payment_intent_id UUID NOT NULL REFERENCES payment_intents(id),
-    invoice_id UUID NOT NULL REFERENCES invoices(id),
-    project_id UUID NOT NULL REFERENCES projects(id),
-    gateway_account_id UUID NOT NULL REFERENCES gateway_accounts(id),
+    account_id UUID NOT NULL,
+    environment environment NOT NULL,
+    gateway_id UUID NOT NULL,
+    payment_intent_id UUID,
+    payment_attempt_id UUID,
 
-    -- prepare_card_authentication, authenticate_cardholder,
-    -- get_card_authentication_result, capture_payment
-    operation_type VARCHAR(30) NOT NULL,
-    gateway_reference VARCHAR(100) NOT NULL,
+    method VARCHAR(10) NOT NULL,
+    url TEXT NOT NULL,
+    request_body JSONB,
+    response_body JSONB,
+    -- NULL when no response came back; error says why.
+    http_status SMALLINT,
+    error TEXT,
 
-    status VARCHAR(30) NOT NULL DEFAULT 'pending', -- pending, completed, errored
+    started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    finished_at TIMESTAMPTZ,
 
-    raw_request JSONB,
-    raw_response JSONB,
+    CHECK (payment_attempt_id IS NULL OR payment_intent_id IS NOT NULL),
 
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    deleted_at TIMESTAMPTZ
+    FOREIGN KEY (gateway_id, account_id, environment)
+        REFERENCES gateways(id, account_id, environment),
+    FOREIGN KEY (payment_intent_id, account_id, environment)
+        REFERENCES payment_intents(id, account_id, environment),
+    FOREIGN KEY (payment_attempt_id, payment_intent_id)
+        REFERENCES payment_attempts(id, payment_intent_id)
 );
 
-CREATE TRIGGER update_gateway_operations_updated_at BEFORE UPDATE ON gateway_operations
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE INDEX idx_gateway_requests_payment_intent ON gateway_requests (payment_intent_id, started_at)
+    WHERE payment_intent_id IS NOT NULL;
+CREATE INDEX idx_gateway_requests_gateway ON gateway_requests (gateway_id, started_at);
