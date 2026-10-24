@@ -15,6 +15,7 @@ sqlc = "1.30.0"
 mockery = "3.7.0"
 "go:github.com/go-delve/delve/cmd/dlv" = "1.26.1"
 "aqua:golang-migrate/migrate" = "4.19.1"
+hurl = "8.0.1"
 
 # Dev defaults only. Production sets the same variables in its own environment.
 [env]
@@ -51,6 +52,9 @@ ensure RESEND_API_KEY "true" 'Only needed with EMAILER = "resend"'
 ensure KHAZINA_TEST_MPGS_BASE_URL "echo https://credimax.gateway.mastercard.com" "MPGS test merchant, used by the e2e tests"
 ensure KHAZINA_TEST_MPGS_MERCHANT_ID "true"
 ensure KHAZINA_TEST_MPGS_API_PASSWORD "true"
+ensure HURL_VARIABLE_base_url "echo '{% raw %}{{ env.KHAZINA_TEST_MPGS_BASE_URL }}{% endraw %}'" "Hurl reads these (CLI and Neovim); they reuse the test merchant values above"
+ensure HURL_VARIABLE_merchant_id "echo '{% raw %}{{ env.KHAZINA_TEST_MPGS_MERCHANT_ID }}{% endraw %}'"
+ensure HURL_VARIABLE_api_password "echo '{% raw %}{{ env.KHAZINA_TEST_MPGS_API_PASSWORD }}{% endraw %}'"
 
 mise trust --quiet "$f"
 echo "$f is up to date"
@@ -70,9 +74,9 @@ run = "docker compose up -d --wait db"
 
 [tasks."dev:khazina"]
 description = "Run khazina on :8080, restarting on changes"
-depends = ["dev:db", "check:templ"]
+depends = ["setup", "dev:db", "check:templ"]
 dir = "khazina"
-run = "watchexec --restart --exts go,templ,sql --ignore '*_templ.go' -- 'templ generate && go run .'"
+run = "mise exec -- watchexec --restart --exts go,templ,sql --ignore '*_templ.go' -- 'templ generate && go run .'"
 
 [tasks."dev:diwan"]
 description = "Run diwan on :5173"
@@ -95,12 +99,19 @@ run = "go test ./... -count=1 -race"
 
 [tasks."test:e2e"]
 description = "Run Playwright e2e tests (needs MPGS test creds in mise.local.toml)"
+depends = ["setup"]
 dir = "khazina/tests/e2e"
 run = [
   "bun install --frozen-lockfile",
   "bun playwright install chromium",
-  "bun playwright test -j 1",
+  "mise exec -- bun playwright test -j 1",
 ]
+
+[tasks.mpgs]
+description = "Send a request to the MPGS test merchant: mise run mpgs <file> --variable order=..."
+depends = ["setup"]
+dir = "khazina/internal/clients/mpgs/hurl"
+run = "mise exec -- hurl"
 
 # ---------------------------------------------------------------------------
 # codegen
