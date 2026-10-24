@@ -15,6 +15,7 @@ sqlc = "1.30.0"
 mockery = "3.7.0"
 "go:github.com/go-delve/delve/cmd/dlv" = "1.26.1"
 "aqua:golang-migrate/migrate" = "4.19.1"
+hurl = "8.0.1"
 
 # Dev defaults only. Production sets the same variables in its own environment.
 [env]
@@ -101,6 +102,11 @@ run = [
   "bun playwright install chromium",
   "bun playwright test -j 1",
 ]
+
+[tasks.mpgs]
+description = "Send a request to the MPGS test merchant: mise run mpgs <file> --variable order=..."
+dir = "khazina/internal/clients/mpgs/hurl"
+run = 'HURL_VARIABLE_base_url="$KHAZINA_TEST_MPGS_BASE_URL" HURL_VARIABLE_merchant_id="$KHAZINA_TEST_MPGS_MERCHANT_ID" hurl --user "merchant.$KHAZINA_TEST_MPGS_MERCHANT_ID:$KHAZINA_TEST_MPGS_API_PASSWORD"'
 
 # ---------------------------------------------------------------------------
 # codegen
