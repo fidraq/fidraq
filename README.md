@@ -1,12 +1,13 @@
 # Fidraq (formerly Saftaja) | فِضْرَق
 
 Self-hostable, open-source payments on top of MPGS (Mastercard Payment Gateway
-Services), the gateway most Gulf banks hand to merchants. Fidraq gives you hosted
-checkout pages with 3-D Secure, per-merchant custom domains with automatic TLS, and a
-dashboard, so you don't have to integrate MPGS by hand.
+Services), the gateway most Gulf banks hand to merchants. Fidraq gives you a hosted
+checkout with 3-D Secure, payment links and a dashboard, so you don't have to
+integrate MPGS by hand.
 
-> **Status:** pre-release. Card payments with 3DS work end to end. The merchant API,
-> webhooks and Apple Pay are in progress.
+> **Status:** pre-release. Card payments with 3DS work end to end. The payments core is
+> being rebuilt for v0.1; see [the design](docs/design/payments-core-v1.md). Apple Pay,
+> the merchant API and webhooks come after.
 
 ## Why Fidraq
 
