@@ -1,2 +1,0 @@
-ALTER TABLE payment_intents
-RENAME COLUMN gateway_session_id TO gateway_setup_reference;

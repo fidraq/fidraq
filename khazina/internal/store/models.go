@@ -87,11 +87,11 @@ type GatewayAccount struct {
 	ConnectorType ConnectorType
 	AccountName   string
 	Config        []byte
+	Secret        []byte
 	IsActive      bool
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
 	DeletedAt     *time.Time
-	Secret        []byte
 }
 
 type GatewayOperation struct {
@@ -99,6 +99,7 @@ type GatewayOperation struct {
 	PaymentIntentID  uuid.UUID
 	InvoiceID        uuid.UUID
 	ProjectID        uuid.UUID
+	GatewayAccountID uuid.UUID
 	OperationType    GatewayOperationType
 	GatewayReference string
 	Status           GatewayOperationStatus
@@ -107,12 +108,12 @@ type GatewayOperation struct {
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
 	DeletedAt        *time.Time
-	GatewayAccountID uuid.UUID
 }
 
 type Invoice struct {
 	ID            uuid.UUID
 	ProjectID     uuid.UUID
+	AmountMinor   money.MinorAmount
 	Currency      money.Currency
 	Status        InvoiceStatus
 	ExternalID    *string
@@ -123,7 +124,6 @@ type Invoice struct {
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
 	DeletedAt     *time.Time
-	AmountMinor   money.MinorAmount
 }
 
 type InvoiceItem struct {
@@ -132,9 +132,9 @@ type InvoiceItem struct {
 	Name           string
 	Description    *string
 	Quantity       int32
-	CreatedAt      time.Time
 	UnitPriceMinor money.MinorAmount
 	AmountMinor    money.MinorAmount
+	CreatedAt      time.Time
 }
 
 type Organization struct {
@@ -157,18 +157,18 @@ type PaymentIntent struct {
 	InvoiceID             uuid.UUID
 	ProjectID             uuid.UUID
 	GatewayAccountID      uuid.UUID
-	GatewaySetupReference *string
+	AmountMinor           money.MinorAmount
+	Currency              money.Currency
 	Status                PaymentIntentStatus
 	PaymentMethod         PaymentMethod
+	GatewaySetupReference *string
 	PayerIp               string
 	PayerUserAgent        string
+	IdempotencyKey        string
 	ExpiresAt             time.Time
 	CreatedAt             time.Time
 	UpdatedAt             time.Time
 	DeletedAt             *time.Time
-	IdempotencyKey        string
-	AmountMinor           money.MinorAmount
-	Currency              money.Currency
 }
 
 type Project struct {
