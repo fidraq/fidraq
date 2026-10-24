@@ -167,7 +167,12 @@ Naming: columns of the `gateways` table are not prefixed (`gateways.type`, `gate
      - apply the returned step through transition: gateway_data, payment_method_details,
        requires_action with next_action = 3DS challenge
 
-3. The browser renders the challenge; the bank redirects back.
+3. The browser renders the challenge. When the customer finishes, the bank's page posts back
+   (through MPGS) to our return URL, which we give MPGS as authentication.redirectResponseUrl:
+   POST {CHECKOUT_URL}/c/cs_x/attempts/att_y/return
+   The endpoint needs no other authentication: it only triggers a fresh read of the result
+   from the gateway, so a forged call cannot change any outcome (5.6.1). It replies with a
+   tiny page that tells the checkout to refresh the attempt.
    PaymentIntentService.ContinueAttempt → adapter.Continue (reads the authentication result)
    → transition → processing
 
@@ -285,8 +290,13 @@ type PaymentIntentService interface {
     Create(ctx, CreatePaymentIntentRequest) (*PaymentIntent, error)
     Get(ctx, GetPaymentIntentRequest) (*PaymentIntent, error)
     Cancel(ctx, CancelPaymentIntentRequest) (*PaymentIntent, error)
+    List(ctx, ListPaymentIntentsRequest) (*PaymentIntentList, error)        // dashboard payments list
     CreateAttempt(ctx, CreateAttemptRequest) (*Attempt, error)
+    GetAttempt(ctx, GetAttemptRequest) (*Attempt, error)                    // the checkout polls it (5.9)
     ContinueAttempt(ctx, ContinueAttemptRequest) (*Attempt, error)
+    CancelAttempt(ctx, CancelAttemptRequest) (*Attempt, error)              // the customer's cancel button
+    ListAttempts(ctx, ListAttemptsRequest) (*AttemptList, error)            // the payment timeline
+    ListGatewayRequests(ctx, ListGatewayRequestsRequest) (*GatewayRequestList, error) // "Debug requests"
 }
 
 // Used only by River jobs; never exposed as an RPC.
@@ -303,6 +313,7 @@ type CheckoutSessionService interface {
 
 type PaymentLinkService interface {
     Create(ctx, CreatePaymentLinkRequest) (*PaymentLink, error)
+    Get(ctx, GetPaymentLinkRequest) (*PaymentLink, error)       // the link page and the dashboard
     List(ctx, ListPaymentLinksRequest) (*PaymentLinkList, error)
     Update(ctx, UpdatePaymentLinkRequest) (*PaymentLink, error) // limit, expiry, active
     Open(ctx, OpenPaymentLinkRequest) (*CheckoutSession, error) // the POST from /l/plink_x
@@ -534,6 +545,8 @@ Authentication uses [Initiate Authentication](https://credimax.gateway.mastercar
 | `AUTHENTICATION_NOT_SUPPORTED` | `failed`, `card_not_supported`, for the same reason. |
 
 ### 6.9 Errors
+
+An alert in v0.1 is an error-level log line with a fixed `alert` field and the ids involved (for example `alert=capture_unresolved attempt=att_...`), so any log tool can notify on it. Alerts fire for: an attempt `capturing` for over an hour, a gateway response that does not match its request, `PARTIALLY_APPROVED`, an unexpected `ERROR` from MPGS, and internal errors.
 
 Roles exist in the schema but are not enforced in v0.1: every team member sees everything, including "Debug requests". When roles are enforced, raw requests become admin-only.
 
