@@ -74,9 +74,9 @@ run = "docker compose up -d --wait db"
 
 [tasks."dev:khazina"]
 description = "Run khazina on :8080, restarting on changes"
-depends = ["dev:db", "check:templ"]
+depends = ["setup", "dev:db", "check:templ"]
 dir = "khazina"
-run = "watchexec --restart --exts go,templ,sql --ignore '*_templ.go' -- 'templ generate && go run .'"
+run = "mise exec -- watchexec --restart --exts go,templ,sql --ignore '*_templ.go' -- 'templ generate && go run .'"
 
 [tasks."dev:diwan"]
 description = "Run diwan on :5173"
@@ -99,17 +99,19 @@ run = "go test ./... -count=1 -race"
 
 [tasks."test:e2e"]
 description = "Run Playwright e2e tests (needs MPGS test creds in mise.local.toml)"
+depends = ["setup"]
 dir = "khazina/tests/e2e"
 run = [
   "bun install --frozen-lockfile",
   "bun playwright install chromium",
-  "bun playwright test -j 1",
+  "mise exec -- bun playwright test -j 1",
 ]
 
 [tasks.mpgs]
-description = "Send a request to the MPGS test merchant: mise run mpgs <file> --variable order=... (run mise run setup once first)"
+description = "Send a request to the MPGS test merchant: mise run mpgs <file> --variable order=..."
+depends = ["setup"]
 dir = "khazina/internal/clients/mpgs/hurl"
-run = "hurl"
+run = "mise exec -- hurl"
 
 # ---------------------------------------------------------------------------
 # codegen
