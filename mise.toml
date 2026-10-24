@@ -52,6 +52,9 @@ ensure RESEND_API_KEY "true" 'Only needed with EMAILER = "resend"'
 ensure KHAZINA_TEST_MPGS_BASE_URL "echo https://credimax.gateway.mastercard.com" "MPGS test merchant, used by the e2e tests"
 ensure KHAZINA_TEST_MPGS_MERCHANT_ID "true"
 ensure KHAZINA_TEST_MPGS_API_PASSWORD "true"
+ensure HURL_VARIABLE_base_url "echo '{% raw %}{{ env.KHAZINA_TEST_MPGS_BASE_URL }}{% endraw %}'" "Hurl reads these (CLI and Neovim); they reuse the test merchant values above"
+ensure HURL_VARIABLE_merchant_id "echo '{% raw %}{{ env.KHAZINA_TEST_MPGS_MERCHANT_ID }}{% endraw %}'"
+ensure HURL_VARIABLE_api_password "echo '{% raw %}{{ env.KHAZINA_TEST_MPGS_API_PASSWORD }}{% endraw %}'"
 
 mise trust --quiet "$f"
 echo "$f is up to date"
@@ -104,9 +107,9 @@ run = [
 ]
 
 [tasks.mpgs]
-description = "Send a request to the MPGS test merchant: mise run mpgs <file> --variable order=..."
+description = "Send a request to the MPGS test merchant: mise run mpgs <file> --variable order=... (run mise run setup once first)"
 dir = "khazina/internal/clients/mpgs/hurl"
-run = 'HURL_VARIABLE_base_url="$KHAZINA_TEST_MPGS_BASE_URL" HURL_VARIABLE_merchant_id="$KHAZINA_TEST_MPGS_MERCHANT_ID" hurl --user "merchant.$KHAZINA_TEST_MPGS_MERCHANT_ID:$KHAZINA_TEST_MPGS_API_PASSWORD"'
+run = "hurl"
 
 # ---------------------------------------------------------------------------
 # codegen

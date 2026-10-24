@@ -1,5 +1,7 @@
 # Variables: order, transaction (the one used to initiate authentication), session, amount, currency, return_url
 PUT {{base_url}}/api/rest/version/100/merchant/{{merchant_id}}/order/{{order}}/transaction/{{transaction}}
+[BasicAuth]
+merchant.{{merchant_id}}: {{api_password}}
 {
   "apiOperation": "AUTHENTICATE_PAYER",
   "authentication": {
