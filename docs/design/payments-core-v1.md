@@ -92,7 +92,7 @@ The adapter's own step (for MPGS, "waiting for the authentication result") lives
 | Reason | Who decided |
 |---|---|
 | `merchant_canceled` | The merchant, billing or the API canceled the session or intent. |
-| `customer_canceled` | The customer chose to stop, switch method, or take over from another window (5.4). |
+| `customer_canceled` | The customer chose to stop, switch method, or take over from another tab or device (5.4). |
 
 `payment_method_type` (`card`, `apple_pay`) is the kind of method an attempt uses. The name `payment_method` is kept free for the saved cards and wallets that come later (a `payment_methods` table, and a `payment_method_id` on attempts saying which one was used).
 
