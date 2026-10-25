@@ -21,7 +21,7 @@ This document describes the redesigned core: the data model, the flows, the inte
 Goals for v1:
 
 - One-time payments by card, through a hosted checkout.
-- Checkout sessions and reusable payment links, with optional payment limits.
+- Checkout sessions, also shared as one-time payment requests, and reusable payment links.
 - No double charge, ever, including on timeouts, retries, double clicks and races.
 - A reconcile job that resolves payments whose outcome is unknown.
 - A model where adding a provider (Apple Pay, STC Pay, Benefit, CyberSource, ...) means writing a gateway adapter, not changing the core.
@@ -33,6 +33,7 @@ Non-goals for v1 (the core is designed so they are additive later):
 - Billing (invoices, subscriptions) and integrations such as Zoho.
 - Launching the public API. The API is planned; the services are shaped for it.
 - Routing between several gateways.
+- Payment links with a limited number of payments (10).
 
 ## 3. Vocabulary
 
@@ -73,7 +74,7 @@ Provider-neutral:
 | `capturing` | Money is moving. |
 | `succeeded` | Paid. |
 | `failed` | Declined or errored; nothing was charged. |
-| `expired` | Abandoned; time ran out. |
+| `expired` | Time ran out. |
 | `canceled` | A decision made it unnecessary; `cancellation_reason` says which. |
 
 The adapter's own step (for MPGS, "waiting for the authentication result") lives in `gateway_data`, not in this enum.
@@ -89,7 +90,7 @@ The adapter's own step (for MPGS, "waiting for the authentication result") lives
 
 ### Payment intent statuses
 
-The intent mostly follows its attempts; `transition` updates it in the same transaction as the attempt. The only direct moves are canceling it (by the merchant) and abandoning it (when its session expires).
+The intent mostly follows its attempts; `transition` updates it in the same transaction as the attempt. The only direct moves are canceling it (by the merchant) and expiring it (when its session expires).
 
 | Status | When |
 |---|---|
@@ -104,7 +105,7 @@ A canceled intent always has a `cancellation_reason`, enforced by a check constr
 | Reason | Who decided |
 |---|---|
 | `merchant_canceled` | The merchant, billing or the API canceled it. |
-| `abandoned` | Its checkout session expired unpaid. |
+| `expired` | Its checkout session expired unpaid. The system decided, on the clock, as Stripe's internally generated `expired` reason ([PaymentIntent](https://docs.stripe.com/api/payment_intents/object)). |
 
 ### JSON fields on attempts
 
@@ -129,7 +130,6 @@ Naming: columns of the `gateways` table are not prefixed (`gateways.type`, `gate
 - One active gateway per account and environment (until routing exists), and only a verified gateway (capabilities checked) can be active.
 - Currencies are three uppercase letters.
 - An attempt has no amount of its own: it always charges its intent's amount and currency, so the two can never disagree.
-- Payment links: never more payments than `max_payments`, counted under a lock on the link (5.3).
 - Amounts are positive; `succeeded`, `canceled` and `complete` require their timestamps.
 - Idempotency keys are unique per account and environment.
 - A gateway request with an attempt also has that attempt's intent (a check and a composite foreign key).
@@ -177,7 +177,7 @@ Naming: columns of the `gateways` table are not prefixed (`gateways.type`, `gate
    → transition → processing
 
 4. Still inside ContinueAttempt, once authentication succeeded (no extra browser round trip):
-   transition → capturing, committed before the call (locks the intent, and the link if any, and checks its limit)
+   transition → capturing, committed before the call (locks the intent)
    adapter.Capture: MPGS PAY with the deterministic transaction id capture
    transition → succeeded: intent succeeded, session complete
 ```
@@ -196,22 +196,11 @@ The rule that makes this work: **an adapter must be able to reconcile from the a
 - We never send the same transaction id twice. MPGS's docs do not say what happens if an id is reused, so the design does not depend on it. MPGS also says a failed operation needs a new id for any retry ([Pay](https://credimax.gateway.mastercard.com/api/documentation/apiDocumentation/rest-json/version/100/operation/Transaction%3a%20%20Pay.html): "If you attempt an operation and it fails ..., then you need a new id for each retry"). We never retry inside an attempt: a failed capture fails the attempt, and the customer's next try is a new attempt, which is a new order with fresh ids. After a timeout, reconcile only reads; it never resends.
 - Gateways that assign their own ids: we send the attempt id as their merchant reference (CyberSource: `clientReferenceInformation.code`, verified), and reconcile searches by it.
 
-### 5.3 One-time payment link opened by two people
+### 5.3 Payment requests and links
 
-`GET /l/plink_x` shows a page with a Pay button and creates nothing (link previews in WhatsApp and other apps must not create sessions). `POST` creates a session and its intent and redirects to `/c/cs_...`.
+A one-time payment request is a checkout session the merchant creates in the dashboard, with a longer expiry if needed, and shares as `/c/cs_...` (for example on WhatsApp). A session has one intent and an intent is paid at most once (4), so a request opened by two people is still paid once: they are two tabs on one session (5.4).
 
-Both people get their own session. When an attempt enters `capturing`, the same transaction runs:
-
-```sql
-SELECT 1 FROM payment_links WHERE id = $1 FOR UPDATE;   -- one capture per link at a time
-
-SELECT count(DISTINCT s.payment_intent_id)
-FROM checkout_sessions s
-JOIN payment_attempts a ON a.payment_intent_id = s.payment_intent_id
-WHERE s.payment_link_id = $1 AND a.status IN ('capturing', 'succeeded');
-```
-
-Under the lock on the link, only one transaction counts at a time. If the count has reached `max_payments`, the capture is refused before any money moves: "This link has already been paid". There is no stored counter: a failed capture is simply no longer counted, so nothing needs releasing and nothing can drift. Counting naively without the lock would let two captures both see room and both go through.
+A payment link is reusable. `GET /l/plink_x` shows a page with a Pay button and creates nothing (link previews in WhatsApp and other apps must not create sessions). `POST` creates a fresh session and its intent and redirects to `/c/cs_...`. Every customer gets their own session, so links take no part in the money rules and `transition` never touches them.
 
 ### 5.4 Two tabs on one session
 
@@ -226,14 +215,16 @@ Whoever holds the session URL can take over, so someone with a shared URL could 
 
 The merchant (dashboard, API, billing) cancels intents and sessions, never single attempts. Canceling an intent cancels its open attempts in the same transaction, with reason `merchant_canceled`.
 
+Every intent has one owner, and only the owner ends it. An intent created by a checkout session belongs to the session: canceling it directly is refused (`ErrConflict`, "cancel the checkout session instead"), and canceling the session cancels its intent. This is Stripe's rule: "You can't confirm or cancel the PaymentIntent for a Checkout Session. To cancel, expire the Checkout Session instead" ([Checkout Session](https://docs.stripe.com/api/checkout/sessions/object)). An intent created on its own belongs to the merchant, has no clock and stays open until the merchant cancels it.
+
 Canceling is refused while an attempt is `capturing` or after one `succeeded`: a payment that is moving or paid cannot be canceled, only refunded (later). Cancel and capture both lock the intent row, so exactly one of them wins; a caller like billing reads the answer instead of guessing.
 
 ### 5.6 Expiry
 
 - Attempts expire 15 minutes after creation (`expires_at`). The expiry job (River) moves open ones (`created`, `requires_action`, `processing`) to `expired`. The services also check `expires_at` on every call, so an attempt past its time is refused even before the job runs. Nobody resets anything by hand.
 - Sessions expire after 24 hours by default. A session opened from a link expires at the earlier of 24 hours and the link's `expires_at`. A "request a payment" session can be given a longer expiry.
-- When a session expires unpaid, the job moves it to `expired`, cancels its intent with reason `abandoned`, and expires its open attempts. An attempt that is `capturing` is left to the reconcile job.
-- A link refuses new sessions once it is inactive, past its `expires_at`, or full.
+- When a session expires unpaid, the job moves it to `expired`, cancels its intent with reason `expired`, and expires its open attempts. An attempt that is `capturing` is left to the reconcile job.
+- A link refuses new sessions once it is inactive or past its `expires_at`.
 
 ### 5.6.1 Who can act on a session
 
@@ -260,7 +251,7 @@ Attempts are not tied to the browser that started them. The 3-D Secure return ha
 | Double click on Pay, or a network retry | The same idempotency key returns the same attempt. |
 | Session opened after it was paid | The page shows "Paid". No form, no attempt. |
 | Session expired or canceled when opened | The page explains it; no form. For a link, opening the link again creates a fresh session. |
-| Link inactive, expired or full | `GET /l/...` shows why and offers no Pay button. |
+| Link inactive or expired | `GET /l/...` shows why and offers no Pay button. |
 | Merchant cancels while the customer is on the page | Allowed before capture: the next step is refused and the page shows the session as canceled. Refused during or after capture (5.5). |
 | The gateway is down while preparing | That method is shown as unavailable; nothing is created. |
 | The gateway is down during authentication | The call gets no response or an error; no money can move before capture, so the attempt `failed` and the customer can retry. |
@@ -325,7 +316,7 @@ type PaymentLinkService interface {
     Create(ctx, CreatePaymentLinkRequest) (*PaymentLink, error)
     Get(ctx, GetPaymentLinkRequest) (*PaymentLink, error)       // the link page and the dashboard
     List(ctx, ListPaymentLinksRequest) (*PaymentLinkList, error)
-    Update(ctx, UpdatePaymentLinkRequest) (*PaymentLink, error) // limit, expiry, active
+    Update(ctx, UpdatePaymentLinkRequest) (*PaymentLink, error) // expiry, active
     Open(ctx, OpenPaymentLinkRequest) (*CheckoutSession, error) // the POST from /l/plink_x
 }
 ```
@@ -367,9 +358,9 @@ The log fails open: if writing a row fails, the request is still sent and the fa
 
 ### 6.3 Transition
 
-One function in the payments package is the only code that writes attempt, intent and session status. It runs in one database transaction, locks rows in a fixed order (intent, then attempts, then link) so two transitions can never deadlock, validates the move, sets the fields below, and (later) writes outbox events. HTTP handlers, River jobs and provider callbacks all reach it through the services.
+One function in the payments package is the only code that writes attempt, intent and session status. It runs in one database transaction, locks rows in a fixed order (intent, then attempts) so two transitions can never deadlock, validates the move, sets the fields below, and (later) writes outbox events. HTTP handlers, River jobs and provider callbacks all reach it through the services.
 
-How it is safe under concurrency: Postgres runs at its default isolation level (read committed), and `transition` takes row locks with `SELECT ... FOR UPDATE` in the fixed order above before reading the state it changes. The partial unique indexes back this up: even if two transactions raced, the database itself refuses a second capture or a full link.
+How it is safe under concurrency: Postgres runs at its default isolation level (read committed), and `transition` takes row locks with `SELECT ... FOR UPDATE` in the fixed order above before reading the state it changes. The partial unique indexes back this up: even if two transactions raced, the database itself refuses a second capture.
 
 Time always comes from the database (`NOW()`), never from the server's clock, so expiry checks agree across all running pods.
 
@@ -395,7 +386,6 @@ Every update query sets `updated_at = NOW()` itself; there are no triggers.
 
 **Side effects in the same transaction:**
 
-- Into `capturing`: if the session came from a link, lock the link and count its payments; if it has reached its limit, refuse before any money moves.
 - Into `succeeded`: the intent becomes `succeeded` (`succeeded_at`) and the session `complete` (`completed_at`). There are no other open attempts to cancel.
 - After every move, the intent's status follows its one active attempt. This is Stripe's model ([PaymentIntent lifecycle](https://docs.stripe.com/payments/paymentintents/lifecycle)): "If the payment attempt fails (for example, due to a decline), the PaymentIntent's status returns to `requires_payment_method` so that the payment can be retried."
 
@@ -414,7 +404,7 @@ Every update query sets `updated_at = NOW()` itself; there are no triggers.
 |---|---|---|
 | `succeeded` | its attempt succeeded | `succeeded_at` |
 | `canceled` | the merchant canceled it; refused if an attempt is capturing or succeeded. Open attempts are canceled with `merchant_canceled`. | `canceled_at`, `cancellation_reason = merchant_canceled` |
-| `canceled` | its session expired unpaid; skipped while an attempt is capturing | `canceled_at`, `cancellation_reason = abandoned` |
+| `canceled` | its session expired unpaid; skipped while an attempt is capturing | `canceled_at`, `cancellation_reason = expired` |
 
 **Checkout session:**
 
@@ -573,7 +563,7 @@ A payment decline is not an error: `CreateAttempt` returns the attempt as `faile
 |---|---|---|---|
 | `ErrInvalid` | `invalid_argument` | 400 | bad amount, unknown currency |
 | `ErrNotFound` | `not_found` | 404 | unknown id; also used for another account's or environment's ids, so nothing leaks |
-| `ErrConflict` | `failed_precondition` | 409 | already paid, session expired or canceled, link full, cancel while capturing |
+| `ErrConflict` | `failed_precondition` | 409 | already paid, session expired or canceled, cancel while capturing, canceling a session's intent directly |
 | `ErrIdempotencyMismatch` | `already_exists` | 409 | the same idempotency key with a different request |
 | `ErrUnauthenticated` | `unauthenticated` | 401 | |
 | `ErrGateway` | `unavailable` | 503 | the gateway is down before anything was charged |
@@ -617,7 +607,7 @@ Capabilities are refreshed by a daily job and by a "refresh" button.
 
 ## 7. Alternatives considered
 
-**Event-driven core.** Attempts would advance by publishing and consuming events. Decoupled and auditable, but capture needs strong consistency at that moment (row locks, the one-capture index, link slots, write-ahead), and an event bus makes those eventually consistent, adding ordering and duplicate problems exactly where a mistake charges twice. Chosen instead: a synchronous state machine for money and a transactional outbox for everything that reacts to money (webhooks, billing, Zoho). Revisit if the core is split across services.
+**Event-driven core.** Attempts would advance by publishing and consuming events. Decoupled and auditable, but capture needs strong consistency at that moment (row locks, the one-capture index, write-ahead), and an event bus makes those eventually consistent, adding ordering and duplicate problems exactly where a mistake charges twice. Chosen instead: a synchronous state machine for money and a transactional outbox for everything that reacts to money (webhooks, billing, Zoho). Revisit if the core is split across services.
 
 **Microservices.** Separate services for checkout, payments and gateway adapters. Independent deploys, but network calls, no shared transactions, harder debugging, and self-hosters would run several services. Chosen instead: a modular monolith (one binary, bounded contexts as Go packages, dependencies in one direction).
 
@@ -637,11 +627,9 @@ Capabilities are refreshed by a daily job and by a "refresh" button.
 
 **One name per role: "gateway" and "connector".** Two nouns for nearly one thing. Chosen instead: "gateway" everywhere in data and API (merchants say "payment gateway"; Spreedly uses it for every provider), and "gateway adapter" for the code.
 
-**A stored `paid_count` on links.** A counter updated at capture and decremented on failure. It works, but it is a copy of something the database can count, and the decrement is one more path to get wrong. Chosen instead: count under the link's row lock.
-
 **Parallel attempts per intent.** Several attempts could be open at once (two tabs both in 3-D Secure), and the intent's status would be a summary of them, with a priority rule and a `superseded` cancel when one succeeded. It handled an edge case nobody needs and was more complex than Stripe, whose intent has one try at a time. Chosen instead: one active attempt per intent, enforced by a unique index, with an explicit take-over for a second window.
 
-**Two products for links** (one-time requests vs reusable links). One table with `max_payments` covers both; "add 5 more uses" is raising the limit.
+**One links table with `max_payments` for one-time and reusable links.** One table covered both, but the limit had to be checked as a capture starts, under a lock on the link, which put links inside `transition` and needed a race of its own. Chosen instead: a one-time request is a checkout session, which already pays at most once, and links are reusable with no limit.
 
 **Postgres schemas per bounded context.** Visible ownership and database-level permissions, but there is only one real context today and per-test schemas already use `search_path`. Revisit when billing arrives; moving tables is `ALTER TABLE ... SET SCHEMA`.
 
@@ -662,6 +650,7 @@ Every external fact this design relies on must come from the provider's official
 - Co-badged cards (mada, Benefit with Visa or Mastercard): which network is used is often decided by the acquirer; the checkout may need separate buttons for local networks.
 - Reconcile edge cases: the gateway itself unavailable for a long time.
 - Exact request and response shapes, to be settled with the protos.
+- PCI DSS: card data only ever enters the gateway's hosted fields, which keeps scope small but not zero. Hosted Fidraq serves the page around those fields, so it is a service provider (at Visa Level 2, under 300,000 transactions a year: a yearly SAQ D for service providers and quarterly ASV scans); merchants using it fill SAQ A, whose v4.0.1 eligibility asks that their pages are protected against script attacks ([PCI SSC FAQ](https://pcisecuritystandards.org/faq/articles/Frequently_Asked_Question/how-does-an-e-commerce-merchant-meet-the-saq-a-eligibility-criteria-for-scripts)). Unverified against the official SAQ documents; read them and ask Credimax what they require before hosted Fidraq or `fidraq.js` goes live. PCI SSC forbids claiming "PCI compliant" or showing compliance logos ([FAQ](https://www.pcisecuritystandards.org/faq/articles/Frequently_Asked_Question/Does-PCI-SSC-provide-a-PCI-DSS-Compliant-logo)); the proof is an Attestation of Compliance shared on request.
 
 ## 9. Rollout
 
@@ -672,7 +661,7 @@ Migrations run as their own step (`khazina migrate`), as a Kubernetes job or Hel
 1. Schema
 2. Queries and sqlc
 3. Gateway adapter interface, the recording transport and the MPGS adapter, plus the gateway service (connect, verify, activate)
-4. `transition` and the money-safety tests (two captures racing, one-time link race)
+4. `transition` and the money-safety tests (two captures racing, two tabs on one session)
 5. Services
 6. Checkout pages (templ, one component per action) and prefixed public ids
 7. River: reconcile and expiry jobs
@@ -685,6 +674,8 @@ Migrations run as their own step (`khazina migrate`), as a Kubernetes job or Hel
 None of this is in v1. Each item is additive: new enum values, new tables or new columns, never a change to what v1 builds.
 
 - **Routing.** A gateway declares capabilities (card brands and currencies from MPGS's Payment Options Inquiry; Apple Pay and recurring detected by testing), plus a priority. The router filters active gateways by capability, skips unhealthy ones (circuit breaker) and picks by priority. A saved card always goes to the gateway that holds its token. Declines and `unknown` outcomes are never retried on another gateway. Bank splits (a recurring MID, a MID per currency) are several gateways in one account, never several accounts.
+- **Payment links with a limit** (sell exactly N). The link reserves a slot when it opens a session: `Links.Open` locks the link and counts its sessions that are complete or still open, and an expired session frees its slot, like a ticket hold. Each session pays at most once, so the link can never exceed its limit, and `transition` still never touches links. Limited links use a short session expiry so abandoned holds free up quickly.
+- **Session modes and UI modes.** Sessions gain `mode` (`payment`, `setup`) with one foreign key per mode and a check that exactly the right one is set, never a polymorphic id; existing rows become `payment`. They also gain `ui_mode`, as in Stripe: `hosted_page` (v1), `embedded_page`, and `elements`, where the merchant draws the page and Fidraq still runs the session. `elements` comes with `fidraq.js`, served by the Fidraq server so it always matches its API version, with a small frontend adapter per gateway that mounts that gateway's hosted card fields (MPGS Hosted Session, CyberSource's equivalent) on the merchant's page; card data stays in the gateway's iframes. Merchants with their own order system skip sessions and drive an intent with a per-intent client secret.
 - **Local networks and co-badged cards.** mada works through MPGS as a card brand. Networks that need their own gateway (Benefit, KNET) appear as separate payment methods in the checkout, so the customer's button choice is the routing decision.
 - **More gateway adapters.** STC Pay and BenefitPay (approval in an app or by OTP), redirect-based gateways (Benefit, KNET), BNPL (needs an `authorized` status). Each one adds enum values and an adapter; attempt statuses, `next_action`, `gateway_data` and `payment_method_details` already cover them.
 - **Saved cards and recurring payments.** `payment_methods` (the card, gateway-neutral) → `payment_method_tokens` (one per gateway that stored it) → `mandates` (permission for future charges: one per subscription, created by a customer-present payment with 3-D Secure and used by merchant-initiated charges on the same gateway; the MPGS adapter maps a mandate to an MPGS "agreement"). Saving a card without charging it is a `setup_intents` flow, named after Stripe's SetupIntent: the same state machine style as payment intents, ending in a saved payment method and a mandate. Attempts gain a `payment_method_id`. `payer_ip` and `payer_user_agent` become nullable for charges without a customer present.

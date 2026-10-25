@@ -26,7 +26,7 @@ CREATE TYPE payment_attempt_status AS ENUM (
     'expired',
     'canceled'
 );
-CREATE TYPE payment_intent_cancellation_reason AS ENUM ('merchant_canceled', 'abandoned');
+CREATE TYPE payment_intent_cancellation_reason AS ENUM ('merchant_canceled', 'expired');
 CREATE TYPE payment_attempt_cancellation_reason AS ENUM ('merchant_canceled', 'customer_canceled');
 CREATE TYPE authentication_method AS ENUM ('three_d_secure', 'device', 'none');
 CREATE TYPE authentication_status AS ENUM ('authenticated', 'attempted', 'failed', 'unavailable');
@@ -185,8 +185,6 @@ CREATE TABLE payment_links (
     description TEXT NOT NULL,
 
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
-    -- NULL means unlimited. Payments are counted under a lock on this row when a capture starts.
-    max_payments INT CHECK (max_payments > 0),
     expires_at TIMESTAMPTZ,
 
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
