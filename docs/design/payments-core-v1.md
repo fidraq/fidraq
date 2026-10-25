@@ -129,7 +129,7 @@ Naming: columns of the `gateways` table are not prefixed (`gateways.type`, `gate
 - One active gateway per account and environment (until routing exists), and only a verified gateway (capabilities checked) can be active.
 - Currencies are three uppercase letters.
 - An attempt has no amount of its own: it always charges its intent's amount and currency, so the two can never disagree.
-- Payment links: `paid_count <= max_payments`.
+- Payment links: never more payments than `max_payments`, counted under a lock on the link (5.3).
 - Amounts are positive; `succeeded`, `canceled` and `complete` require their timestamps.
 - Idempotency keys are unique per account and environment.
 - A gateway request with an attempt also has that attempt's intent (a check and a composite foreign key).
@@ -177,7 +177,7 @@ Naming: columns of the `gateways` table are not prefixed (`gateways.type`, `gate
    → transition → processing
 
 4. Still inside ContinueAttempt, once authentication succeeded (no extra browser round trip):
-   transition → capturing, committed before the call (locks the intent, takes a link slot if any)
+   transition → capturing, committed before the call (locks the intent, and the link if any, and checks its limit)
    adapter.Capture: MPGS PAY with the deterministic transaction id capture
    transition → succeeded: intent succeeded, session complete, other open attempts canceled (superseded)
 ```
@@ -203,11 +203,15 @@ The rule that makes this work: **an adapter must be able to reconcile from the a
 Both people get their own session. When an attempt enters `capturing`, the same transaction runs:
 
 ```sql
-UPDATE payment_links SET paid_count = paid_count + 1
-WHERE id = $1 AND (max_payments IS NULL OR paid_count < max_payments);
+SELECT 1 FROM payment_links WHERE id = $1 FOR UPDATE;   -- one capture per link at a time
+
+SELECT count(DISTINCT s.payment_intent_id)
+FROM checkout_sessions s
+JOIN payment_attempts a ON a.payment_intent_id = s.payment_intent_id
+WHERE s.payment_link_id = $1 AND a.status IN ('capturing', 'succeeded');
 ```
 
-The first wins. The second gets zero rows and is refused before any money moves: "This link has already been paid". If a capture later fails, the slot is released.
+Under the lock on the link, only one transaction counts at a time. If the count has reached `max_payments`, the capture is refused before any money moves: "This link has already been paid". There is no stored counter: a failed capture is simply no longer counted, so nothing needs releasing and nothing can drift. Counting naively without the lock would let two captures both see room and both go through.
 
 ### 5.4 Two tabs on one session
 
@@ -385,10 +389,9 @@ Every update query sets `updated_at = NOW()` itself; there are no triggers.
 
 **Side effects in the same transaction:**
 
-- Into `capturing`: if the session came from a link, take a slot; if the link is full, refuse before any money moves.
+- Into `capturing`: if the session came from a link, lock the link and count its payments; if it has reached its limit, refuse before any money moves.
 - Into `capturing`: other open attempts are not canceled. They are only blocked from capturing by the one-capture index, because the capture may still fail and they remain a valid second chance.
 - Into `succeeded`: the intent becomes `succeeded` (`succeeded_at`), the session `complete` (`completed_at`), and every other open attempt on the intent `canceled` with reason `superseded`.
-- `capturing` to `failed`: release the link slot.
 - After every move, the intent's status is recomputed from its open attempts: `processing` if any is processing or capturing, otherwise `requires_action` if any requires action, otherwise `requires_payment_method`. Deriving it keeps the intent right when two tabs have attempts at once.
 
 **Intent:** derived as above, plus three direct moves:
@@ -619,6 +622,8 @@ Capabilities are refreshed by a daily job and by a "refresh" button.
 **Prepared commands (thunks) for gateway calls.** They let the service log and save ids before sending. Replaced by transport logging plus deterministic or searchable ids, which keep the same safety with less machinery.
 
 **One name per role: "gateway" and "connector".** Two nouns for nearly one thing. Chosen instead: "gateway" everywhere in data and API (merchants say "payment gateway"; Spreedly uses it for every provider), and "gateway adapter" for the code.
+
+**A stored `paid_count` on links.** A counter updated at capture and decremented on failure. It works, but it is a copy of something the database can count, and the decrement is one more path to get wrong. Chosen instead: count under the link's row lock.
 
 **Two products for links** (one-time requests vs reusable links). One table with `max_payments` covers both; "add 5 more uses" is raising the limit.
 

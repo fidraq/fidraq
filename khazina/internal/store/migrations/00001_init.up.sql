@@ -185,15 +185,12 @@ CREATE TABLE payment_links (
     description TEXT NOT NULL,
 
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
-    -- NULL means unlimited; a slot is taken when a capture starts.
+    -- NULL means unlimited. Payments are counted under a lock on this row when a capture starts.
     max_payments INT CHECK (max_payments > 0),
-    paid_count INT NOT NULL DEFAULT 0 CHECK (paid_count >= 0),
     expires_at TIMESTAMPTZ,
 
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-
-    CHECK (max_payments IS NULL OR paid_count <= max_payments),
 
     UNIQUE (id, account_id, environment)
 );
