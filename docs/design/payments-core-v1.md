@@ -547,7 +547,7 @@ Before trusting any response, the adapter checks that it matches the request: or
 | `ERROR` with cause `SERVER_BUSY`, `SERVER_FAILED`, `REQUEST_REJECTED` | stays `capturing` | Not documented as "nothing happened", so it is treated as unknown. |
 | No response (timeout, connection reset) | stays `capturing` | 5.2. |
 
-**Reconcile.** The job is generic: it finds attempts that have been `capturing` for over a minute and calls the adapter's `Status`. The logic is per gateway, inside the adapter. For MPGS, `Status` calls [Retrieve Transaction](https://credimax.gateway.mastercard.com/api/documentation/apiDocumentation/rest-json/version/100/operation/Transaction%3a%20%20Retrieve%20Transaction.html) for transaction `capture` in order `<attempt id>`, checks it matches the attempt, and maps it with the same table. If MPGS reports that the transaction does not exist, the capture never arrived and the attempt is `failed` with `processing_error`. Confirmed on the Credimax sandbox: HTTP 400 with `{"result": "ERROR", "error": {"cause": "INVALID_REQUEST", "explanation": "Unable to find order <order> and transaction <transaction> for merchant <merchant>"}}`. `INVALID_REQUEST` also means a malformed request, so this reading is only used for our own retrieve call; anything else unexpected alerts instead of guessing. If the answer is still uncertain, the attempt stays `capturing`, the job retries with backoff, and after an hour it alerts a person.
+**Reconcile.** The job is generic: it finds attempts that have been `capturing` for over a minute and calls the adapter's `Status`. The logic is per gateway, inside the adapter. For MPGS, `Status` calls [Retrieve Transaction](https://credimax.gateway.mastercard.com/api/documentation/apiDocumentation/rest-json/version/100/operation/Transaction%3a%20%20Retrieve%20Transaction.html) for transaction `capture` in order `<attempt id>`, checks it matches the attempt, and maps it with the same table. If MPGS reports that the transaction does not exist, the capture never arrived and the attempt is `failed` with `processing_error`. Confirmed on the Credimax sandbox: HTTP 400 with `{"result": "ERROR", "error": {"cause": "INVALID_REQUEST", "explanation": "Unable to find order <order> and transaction <transaction> for merchant <merchant>"}}`. The request in `khazina/internal/clients/mpgs/hurl/retrieve-transaction.hurl` repeats the check. `INVALID_REQUEST` also means a malformed request, so this reading is only used for our own retrieve call; anything else unexpected alerts instead of guessing. If the answer is still uncertain, the attempt stays `capturing`, the job retries with backoff, and after an hour it alerts a person.
 
 ### 6.8 MPGS authentication mapping
 
@@ -652,19 +652,24 @@ Capabilities are refreshed by a daily job and by a "refresh" button.
 
 Every external fact this design relies on must come from the provider's official documentation, with a link. Anything not yet checked is marked unverified and is not built on until it is.
 
-- Verified: CyberSource returns its own transaction id from authorization and uses it for capture; it accepts our reference in `clientReferenceInformation.code`.
-- Verified on the official MPGS docs (Credimax host, API version 100): transaction ids are unique per order and a failed operation needs a new id for a retry ([Pay](https://credimax.gateway.mastercard.com/api/documentation/apiDocumentation/rest-json/version/100/operation/Transaction%3a%20%20Pay.html)); a transaction can be retrieved by order and transaction id, with `order.status` and `transaction.type` in the response ([Retrieve Transaction](https://credimax.gateway.mastercard.com/api/documentation/apiDocumentation/rest-json/version/100/operation/Transaction%3a%20%20Retrieve%20Transaction.html)); a session is temporary storage for request fields ([Create Session](https://credimax.gateway.mastercard.com/api/documentation/apiDocumentation/rest-json/version/100/operation/Session%3a%20Create%20Session.html)).
-- Not documented by MPGS, so not relied on: reusing a transaction id, and reusing a session across orders or how long a session lives.
-- To test on the Credimax sandbox: wait out a 3-D Secure challenge and check that a final "not authenticated" answer comes back (5.9).
-- Tested on the Credimax sandbox: retrieving a transaction that does not exist returns HTTP 400 with cause `INVALID_REQUEST` and "Unable to find order ... and transaction ..." (6.7). The Retrieve Transaction request in the kulala file (`khazina/internal/clients/mpgs/kulala/client.http`) repeats the check.
-- To write before building the adapter: the full MPGS mapping (which calls and fields, `response.gatewayCode` and `order.status` values to our statuses and failure codes, how frictionless 3-D Secure shows up), each with a link.
-- Unverified, later only: how Benefit, KNET, BenefitPay and STC Pay work. Everything said about them in section 10 is general knowledge and must be checked against their official docs before any adapter is designed.
+Facts already checked are stated where the design uses them, with their links (5.2, 5.8, 6.7, 6.8). This section lists only what is still open.
 
-- Bank-hosted MPGS instances may not support API version 100; verify on connect.
-- Apple Pay: merchant certificates and domain verification; whether each bank enables wallets on the merchant's MID.
+Before the MPGS adapter (rollout step 3), on the Credimax sandbox:
+
+- Wait out a 3-D Secure challenge and check that a final "not authenticated" answer comes back (5.9).
+- Pay with a card that passes 3-D Secure without a challenge and record what Authenticate Payer returns, to confirm the frictionless row of 6.8.
+
+Accepted, handled by the design:
+
+- Bank-hosted MPGS instances may not support API version 100; the gateway's verification checks it on connect (6.10).
+- The gateway itself unavailable for a long time: attempts stay `capturing`, reconcile retries with backoff and alerts a person after an hour (6.7).
+- Exact request and response shapes are settled with the protos (rollout step 5).
+
+Later, before the feature that needs them:
+
+- Apple Pay (v0.1.1): merchant certificates and domain verification; whether each bank enables wallets on the merchant's MID.
 - Co-badged cards (mada, Benefit with Visa or Mastercard): which network is used is often decided by the acquirer; the checkout may need separate buttons for local networks.
-- Reconcile edge cases: the gateway itself unavailable for a long time.
-- Exact request and response shapes, to be settled with the protos.
+- Unverified: how Benefit, KNET, BenefitPay and STC Pay work. Everything said about them in section 10 is general knowledge and must be checked against their official docs before any adapter is designed.
 - PCI DSS: card data only ever enters the gateway's hosted fields, which keeps scope small but not zero. Hosted Fidraq serves the page around those fields, so it is a service provider (at Visa Level 2, under 300,000 transactions a year: a yearly SAQ D for service providers and quarterly ASV scans); merchants using it fill SAQ A, whose v4.0.1 eligibility asks that their pages are protected against script attacks ([PCI SSC FAQ](https://pcisecuritystandards.org/faq/articles/Frequently_Asked_Question/how-does-an-e-commerce-merchant-meet-the-saq-a-eligibility-criteria-for-scripts)). Unverified against the official SAQ documents; read them and ask Credimax what they require before hosted Fidraq or `fidraq.js` goes live. PCI SSC forbids claiming "PCI compliant" or showing compliance logos ([FAQ](https://www.pcisecuritystandards.org/faq/articles/Frequently_Asked_Question/Does-PCI-SSC-provide-a-PCI-DSS-Compliant-logo)); the proof is an Attestation of Compliance shared on request.
 
 ## 9. Rollout
