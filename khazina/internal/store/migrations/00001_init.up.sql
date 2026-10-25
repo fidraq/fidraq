@@ -263,8 +263,9 @@ CREATE TABLE payment_attempts (
 
     idempotency_key VARCHAR(64) NOT NULL,
 
-    expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '15 minutes'),
-    -- Set once when the attempt enters capturing; the reconcile and alert clock.
+    -- No default: the insert sets 15 minutes from now, or the session's expiry if that is sooner.
+    expires_at TIMESTAMPTZ NOT NULL,
+    -- When the attempt entered capturing. Reconcile and the one-hour alert measure from it.
     capturing_at TIMESTAMPTZ,
 
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
