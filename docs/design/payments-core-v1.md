@@ -145,6 +145,33 @@ Naming: columns of the `gateways` table are not prefixed (`gateways.type`, `gate
 
 ### 5.1 Card payment
 
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant F as Fidraq
+    participant M as MPGS
+    participant I as Card issuer
+
+    B->>F: GET /c/cs_x
+    F->>M: Create session (Prepare)
+    F-->>B: Card form with MPGS hosted fields
+    B->>M: Card details, typed into hosted fields
+    B->>F: Pay (MPGS session id, idempotency key)
+    F->>M: Retrieve session (brand, last 4)
+    Note over F: insert attempt (created)
+    F->>M: Initiate Authentication, Authenticate Payer
+    F-->>B: requires_action: 3-D Secure challenge
+    B->>I: Challenge
+    I-->>B: Done
+    B->>F: POST return URL (through MPGS)
+    F->>M: Read authentication result
+    Note over F: transition to capturing, committed before the call
+    F->>M: PAY (transaction capture)
+    M-->>F: Approved
+    Note over F: transition to succeeded: intent succeeded, session complete
+    F-->>B: Paid
+```
+
 ```
 1. GET /c/cs_x
    CheckoutSessionService.Get returns the checkout view: merchant name, amount,
@@ -183,6 +210,21 @@ Naming: columns of the `gateways` table are not prefixed (`gateways.type`, `gate
 ```
 
 ### 5.2 Unknown capture
+
+```mermaid
+sequenceDiagram
+    participant F as Fidraq
+    participant M as MPGS
+    participant R as Reconcile job
+
+    Note over F: attempt committed as capturing
+    F->>M: PAY (transaction capture)
+    M--xF: timeout, no response
+    Note over F: attempt stays capturing; customer sees "We're confirming your payment"
+    R->>M: Retrieve Transaction (order = attempt id, transaction capture)
+    M-->>R: found and approved, found and declined, or not found
+    Note over R: transition to succeeded, or failed (not found: processing_error)
+```
 
 The PAY call times out. Its request row has no response (`http_status` NULL, `error` set); the attempt stays `capturing`, because it was committed as `capturing` before the call. The customer sees "We're confirming your payment". The one-capture index blocks any other attempt from capturing.
 
