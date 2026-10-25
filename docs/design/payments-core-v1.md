@@ -2,7 +2,15 @@
 
 Status: draft, frozen for final review. New ideas go to section 10, not into v1.
 
-Scope: the `payments` bounded context in khazina, for the v0.1 release
+Scope: the `payments` bounded context in khazina, for the v0.1 release.
+
+In short:
+
+- A payment intent is what is owed; it has at most one active attempt at a time, and its status follows that attempt.
+- An attempt is committed as `capturing` before the PAY call, so a timeout or crash never loses track of money that may have moved.
+- Gateway ids are deterministic (the MPGS order is the attempt), so the reconcile job settles any unknown outcome from the attempt alone.
+- Gateway adapters never touch the database; one `transition` function writes every status, under row locks in a fixed order.
+- Checkout sessions and payment links are doors on top of intents; the money rules never depend on them.
 
 ## 1. Context
 
@@ -96,7 +104,7 @@ The intent mostly follows its attempts; `transition` updates it in the same tran
 |---|---|
 | `requires_payment_method` | No attempt yet, or the last one failed, expired or was canceled. |
 | `requires_action` | An attempt is waiting on the customer. |
-| `processing` | An attempt is processing or capturing. |
+| `processing` | An attempt is created, processing or capturing. |
 | `succeeded` | An attempt succeeded. |
 | `canceled` | It will never be paid; `cancellation_reason` says why. |
 
@@ -180,7 +188,7 @@ sequenceDiagram
    - calls `adapter.Start(attempt)`: MPGS `INITIATE_AUTHENTICATION` and `AUTHENTICATE_PAYER` (HTTP calls logged automatically, tagged with the attempt);
    - applies the returned step through `transition`: `gateway_data`, `payment_method_details`, and `requires_action` with `next_action` = 3-D Secure challenge. With frictionless 3-D Secure there is no challenge: the step is `processing` with the result, and `CreateAttempt` goes on to step 4 itself.
 3. The browser renders the challenge. When the customer finishes, the bank's page posts back (through MPGS) to our return URL, which we give MPGS as `authentication.redirectResponseUrl`: `POST {CHECKOUT_URL}/c/cs_x/attempts/att_y/return`. The endpoint needs no other authentication: it only triggers a fresh read of the result from the gateway, so a forged call cannot change any outcome (5.10). It replies with a tiny page that tells the checkout to refresh the attempt. `PaymentIntentService.ContinueAttempt` → `adapter.Continue` (reads the authentication result) → `transition` → `processing`.
-4. Still inside `ContinueAttempt`, once authentication succeeded (no extra browser round trip): `transition` → `capturing`, committed before the call (locks the intent); `adapter.Capture`: MPGS `PAY` with the deterministic transaction id `capture`; `transition` → `succeeded`: intent succeeded, session complete.
+4. Still inside `ContinueAttempt`, once authentication succeeded (no extra browser round trip): `transition` → `capturing`, committed before the call (under the locks in 6.3); `adapter.Capture`: MPGS `PAY` with the deterministic transaction id `capture`; `transition` → `succeeded`: intent succeeded, session complete.
 
 ### 5.2 Unknown capture
 
@@ -201,7 +209,7 @@ sequenceDiagram
 
 The PAY call times out. Its request row has no response (`http_status` NULL, `error` set); the attempt stays `capturing`, because it was committed as `capturing` before the call. The customer sees "We're confirming your payment". The one-capture index blocks any other attempt from capturing.
 
-The reconcile job (River, every minute) finds attempts that have been `capturing` for over a minute, asks the adapter (`Status`), which finds the payment from the attempt alone, and transitions to `succeeded` or `failed`. If the gateway cannot answer, the attempt stays `capturing` and the job retries with backoff, alerting a person after an hour.
+The reconcile job (River, every minute) finds attempts whose `capturing_at` is over a minute old, asks the adapter (`Status`), which finds the payment from the attempt alone, and transitions to `succeeded` or `failed`. If the gateway cannot answer, the attempt stays `capturing` and the job retries with backoff, alerting a person after an hour.
 
 No response before capture (preparing or authenticating) moves no money, so the attempt becomes `failed` and the customer can try again.
 
@@ -236,7 +244,7 @@ Canceling is refused while an attempt is `capturing` or after one `succeeded`: a
 
 ### 5.6 Expiry
 
-- Attempts expire 15 minutes after creation, or when their session expires if that is sooner (`expires_at`). The expiry job (River) moves open ones (`created`, `requires_action`, `processing`) to `expired`. The services also check `expires_at` on every call, so an attempt past its time is refused even before the job runs. Nobody resets anything by hand.
+- Attempts expire 15 minutes after creation, or when their session expires if that is sooner (`expires_at`). The expiry job (River, `ExpireAttempts`) moves open ones (`created`, `requires_action`, `processing`) to `expired`. The services also check `expires_at` on every call, so an attempt past its time is refused even before the job runs. Nobody resets anything by hand.
 - Sessions expire after 24 hours by default. A session opened from a link expires at the earlier of 24 hours and the link's `expires_at`. A "request a payment" session can be given a longer expiry.
 - When a session expires unpaid, the job moves it to `expired`, cancels its intent with reason `expired`, and expires its open attempts. An attempt that is `capturing` is left to the reconcile job.
 - A link refuses new sessions once it is inactive or past its `expires_at`.
@@ -287,7 +295,7 @@ A `complete` session shows "Paid"; an `expired` or `canceled` session explains w
 - While the attempt is `created`, `processing`, `requires_action` or `capturing`, the page polls `GetAttempt` every two seconds and switches screens when the status changes. While the attempt is `processing`, it also calls `ContinueAttempt` at most every 5 seconds, so a "check later" answer from the gateway is read again (6.8). `GetAttempt` only reads our database; `ContinueAttempt` asks the gateway. Streaming can replace polling later.
 - Creating an attempt is refused while another attempt on the intent is active, unless the customer takes over (5.4). Nothing is canceled automatically. `customer_canceled` is set only when a client cancels: the cancel button, switching method in the same tab (cancel the current attempt, then start the new one), or taking over. A closed tab's attempt simply expires.
 - Each tab has its own attempt. After creating one, the page puts its id in the URL (`/c/cs_...?attempt=att_...`), so a reload resumes exactly that attempt. Without it, the page shows a fresh form and any old open attempt simply expires. Attempt ids are random like session ids, so knowing one grants the same limited powers as the session URL (5.10).
-- If the bank's challenge times out while the page is open, the 3-D Secure standard has the bank send a final "not authenticated" answer back through the iframe, so the attempt fails with `authentication_failed` and the page offers a retry. This comes from the 3-D Secure standard, not MPGS's docs; it is on the list to confirm on the sandbox.
+- If the bank's challenge times out while the page is open, the 3-D Secure standard has the bank send a final "not authenticated" answer back through the iframe, so the attempt fails with `authentication_failed` and the page offers a retry. This comes from the 3-D Secure standard, not MPGS's docs; it is to be confirmed on the sandbox (section 8).
 
 ### 5.10 Who can act on a session
 
@@ -469,7 +477,7 @@ Our own stable codes, part of the public API: few, snake_case, and only ever add
 - Until launch the protos are internal and may change.
 - The hosted checkout is a client of the same services, like a merchant's own UI would be. Its small script calls the Connect endpoints with plain `fetch`, using the session id from the URL, which can only touch its own session (5.10).
 - Checkout pages live on one domain set by `CHECKOUT_URL` (for example `checkout.fidraq.com`), at `/c/cs_...` and `/l/plink_...`. The old per-merchant custom domains (the tenant-by-host middleware) are removed in v1. Because sessions and links are found by their global ids, custom domains can return later as a mapping from host to account, without changing URLs or ids; the README no longer advertises them.
-- The checkout session id in the URL is what lets the browser act on that session. That only works because ids are random UUIDs (version 4, from `gen_random_uuid()`); they must never become time-ordered UUIDs (version 7), which would make URLs guessable. Custom UIs built on the API later get a per-intent client secret instead.
+- Session and attempt ids are keys (5.10), which only works because they are random UUIDs (version 4, from `gen_random_uuid()`). They must never become time-ordered UUIDs (version 7), which would make URLs guessable.
 - Public ids are a prefix plus the UUID encoded in base62 (22 characters), for example `pi_7n42DGM5Tflk9n8mt7Fhc7`: `pi_` (intents), `cs_` (sessions), `plink_` (links), `att_` (attempts). The database stores plain UUIDs; encoding and decoding happen only at the edges. They are fixed before checkout URLs ship, because URLs cannot change afterwards.
 - Idempotency keys travel in an `Idempotency-Key` HTTP header; the transport passes the key to the service as a parameter. In v0.1 only attempt creation needs one (from the checkout): a repeated key returns the stored attempt if it is for the same intent and payment method, and `ErrIdempotencyMismatch` otherwise. With the public API, creating intents, sessions and links accepts one too, backed by a request-level `idempotency_keys` table (key, request hash, stored response); calls between contexts (6.5) rely on it.
 - Money in the API is a decimal string plus a currency (`"150.00"`, `"SAR"`). In Go it is always `money.MinorAmount` and `money.Currency`.
@@ -562,7 +570,13 @@ Before trusting any response, the adapter checks that it matches the request: or
 | `ERROR` with cause `SERVER_BUSY`, `SERVER_FAILED`, `REQUEST_REJECTED` | stays `capturing` | Not documented as "nothing happened", so it is treated as unknown. |
 | No response (timeout, connection reset) | stays `capturing` | 5.2. |
 
-**Reconcile.** The job is generic: it finds attempts whose `capturing_at` is over a minute old and calls the adapter's `Status`. The logic is per gateway, inside the adapter. For MPGS, `Status` calls [Retrieve Transaction](https://credimax.gateway.mastercard.com/api/documentation/apiDocumentation/rest-json/version/100/operation/Transaction%3a%20%20Retrieve%20Transaction.html) for transaction `capture` in order `<attempt id>`, checks it matches the attempt, and maps it with the same table. If MPGS reports that the transaction does not exist, that is not final at once: a PAY can still land after our call gave up. It is final only when `capturing_at` is more than 10 minutes old; then the capture never arrived and the attempt is `failed` with `processing_error`. Until then the attempt stays `capturing`. The request log cannot be this clock, because it fails open. The PAY call's HTTP timeout (30 seconds) must stay far below this window. Confirmed on the Credimax sandbox: HTTP 400 with `{"result": "ERROR", "error": {"cause": "INVALID_REQUEST", "explanation": "Unable to find order <order> and transaction <transaction> for merchant <merchant>"}}`. The request in `khazina/internal/clients/mpgs/hurl/retrieve-transaction.hurl` repeats the check. `INVALID_REQUEST` also means a malformed request, so this reading is only used for our own retrieve call; anything else unexpected alerts instead of guessing. If the answer is still uncertain, the attempt stays `capturing`, the job retries with backoff, and after an hour it alerts a person.
+**Reconcile.** The job is generic: it finds attempts whose `capturing_at` is over a minute old and calls the adapter's `Status`. The logic is per gateway, inside the adapter. For MPGS, `Status` calls [Retrieve Transaction](https://credimax.gateway.mastercard.com/api/documentation/apiDocumentation/rest-json/version/100/operation/Transaction%3a%20%20Retrieve%20Transaction.html) for transaction `capture` in order `<attempt id>`, checks it matches the attempt, and maps it with the same table. If the answer is still uncertain, the attempt stays `capturing`, the job retries with backoff, and after an hour it alerts a person.
+
+**Not found.** MPGS answers a missing transaction with HTTP 400 and `{"result": "ERROR", "error": {"cause": "INVALID_REQUEST", "explanation": "Unable to find order <order> and transaction <transaction> for merchant <merchant>"}}` (confirmed on the Credimax sandbox; `khazina/internal/clients/mpgs/hurl/retrieve-transaction.hurl` repeats the check). `INVALID_REQUEST` also means a malformed request, so this reading is only used for our own retrieve call; anything else unexpected alerts instead of guessing.
+
+Not found is not final at once, because a PAY can still land after our call gave up. It is final only when `capturing_at` is more than 10 minutes old; then the attempt is `failed` with `processing_error`. The clock is `capturing_at`, not the request log, which fails open. The PAY call's HTTP timeout (30 seconds) must stay far below this window.
+
+Failing it is still a bet, so it is checked twice more. In the same transaction ([transactional enqueueing](https://riverqueue.com/docs/transactional-enqueueing)), reconcile schedules two River jobs, an hour and a day later ([scheduled jobs](https://riverqueue.com/docs/scheduled-jobs)), that read the capture again. If it turns up, they alert; they never change the attempt themselves, and a person handles it.
 
 ### 6.8 MPGS authentication mapping
 
@@ -583,7 +597,7 @@ Authentication uses [Initiate Authentication](https://credimax.gateway.mastercar
 
 ### 6.9 Errors
 
-An alert in v0.1 is an error-level log line with a fixed `alert` field and the ids involved (for example `alert=capture_unresolved attempt=att_...`), so any log tool can notify on it. Alerts fire for: an attempt `capturing` for over an hour, a gateway response that does not match its request, `PARTIALLY_APPROVED`, an unexpected `ERROR` from MPGS, and internal errors.
+An alert in v0.1 is an error-level log line with a fixed `alert` field and the ids involved (for example `alert=capture_unresolved attempt=att_...`), so any log tool can notify on it. Alerts fire for: an attempt `capturing` for over an hour, a capture that turns up after its attempt failed (6.7), a gateway response that does not match its request, `PARTIALLY_APPROVED`, an unexpected `ERROR` from MPGS, and internal errors.
 
 Roles exist in the schema but are not enforced in v0.1: every team member sees everything, including "Debug requests". When roles are enforced, raw requests become admin-only.
 
@@ -703,7 +717,7 @@ The design ships in two releases. v0.1.0 is everything here except Apple Pay (5.
 4. `transition` and the money-safety tests (two captures racing, two tabs on one session)
 5. Services
 6. Checkout pages (templ, one component per action) and prefixed public ids
-7. River: reconcile, expiry and the daily capabilities refresh
+7. River: reconcile with its later re-checks, expiry, and the daily capabilities refresh
 8. Dashboard: payments list and detail, payment requests, links, gateway setup
 9. End-to-end tests: update the existing three, add declined, failed OTP, link, two tabs
 10. Tag v0.1.0
