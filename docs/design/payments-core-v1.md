@@ -658,6 +658,8 @@ Migrations run as their own step (`khazina migrate`), as a Kubernetes job or Hel
 
 `main` keeps the old system working and serves as the reference and demo. The rewrite happens on `schema-redesign` in small commits, each building and passing its own tests; old code is deleted as new code replaces it. The branch merges when the end-to-end tests pass again.
 
+The design ships in two releases. v0.1.0 is everything here except Apple Pay (5.7), which waits on Apple's merchant certificates and the bank enabling wallets on the merchant's MID (8). v0.1.1 adds Apple Pay in its own pull request, from this same design.
+
 1. Schema
 2. Queries and sqlc
 3. Gateway adapter interface, the recording transport and the MPGS adapter, plus the gateway service (connect, verify, activate)
@@ -668,6 +670,7 @@ Migrations run as their own step (`khazina migrate`), as a Kubernetes job or Hel
 8. Dashboard: payments list and detail, links, gateway setup
 9. End-to-end tests: update the existing three, add declined, failed OTP, link, two tabs
 10. Tag v0.1.0
+11. Apple Pay (5.7), then tag v0.1.1
 
 ## 10. Designed for later
 
