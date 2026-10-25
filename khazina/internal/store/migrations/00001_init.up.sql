@@ -264,11 +264,14 @@ CREATE TABLE payment_attempts (
     idempotency_key VARCHAR(64) NOT NULL,
 
     expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '15 minutes'),
+    -- Set once when the attempt enters capturing; the reconcile and alert clock.
+    capturing_at TIMESTAMPTZ,
 
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
     CHECK ((status = 'canceled') = (cancellation_reason IS NOT NULL)),
+    CHECK (status NOT IN ('capturing', 'succeeded') OR capturing_at IS NOT NULL),
 
     UNIQUE (account_id, environment, idempotency_key),
     UNIQUE (id, account_id, environment),
@@ -287,7 +290,7 @@ CREATE UNIQUE INDEX idx_payment_attempts_one_active_per_intent ON payment_attemp
 CREATE UNIQUE INDEX idx_payment_attempts_one_capture_per_intent ON payment_attempts (payment_intent_id)
     WHERE status IN ('capturing', 'succeeded');
 
-CREATE INDEX idx_payment_attempts_capturing ON payment_attempts (updated_at)
+CREATE INDEX idx_payment_attempts_capturing ON payment_attempts (capturing_at)
     WHERE status = 'capturing';
 
 -- ============================================================================

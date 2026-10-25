@@ -33,7 +33,7 @@ Non-goals for v1 (the core is designed so they are additive later):
 - Billing (invoices, subscriptions) and integrations such as Zoho.
 - Launching the public API. The API is planned; the services are shaped for it.
 - Routing between several gateways.
-- Payment links with a limited number of payments (10).
+- Payment links with a limited number of payments (section 10).
 
 ## 3. Vocabulary
 
@@ -86,7 +86,7 @@ The adapter's own step (for MPGS, "waiting for the authentication result") lives
 | `merchant_canceled` | The merchant, billing or the API canceled the session or intent. |
 | `customer_canceled` | The customer chose to stop, switch method, or take over from another window (5.4). |
 
-`payment_method_type` (`card`, `apple_pay`) is the kind of method an attempt uses, as in Stripe. The name `payment_method` is kept free for the saved cards and wallets that come later (a `payment_methods` table, and a `payment_method_id` on attempts saying which one was used).
+`payment_method_type` (`card`, `apple_pay`) is the kind of method an attempt uses. The name `payment_method` is kept free for the saved cards and wallets that come later (a `payment_methods` table, and a `payment_method_id` on attempts saying which one was used).
 
 ### Payment intent statuses
 
@@ -94,7 +94,7 @@ The intent mostly follows its attempts; `transition` updates it in the same tran
 
 | Status | When |
 |---|---|
-| `requires_payment_method` | No attempt yet, or the last one failed or expired. |
+| `requires_payment_method` | No attempt yet, or the last one failed, expired or was canceled. |
 | `requires_action` | An attempt is waiting on the customer. |
 | `processing` | An attempt is processing or capturing. |
 | `succeeded` | An attempt succeeded. |
@@ -125,20 +125,20 @@ Naming: columns of the `gateways` table are not prefixed (`gateways.type`, `gate
 
 ### Rules the database enforces
 
-- At most one active attempt per intent (`created`, `requires_action`, `processing` or `capturing`), as in Stripe: an intent has one try at a time (`idx_payment_attempts_one_active_per_intent`).
+- At most one active attempt per intent (`created`, `requires_action`, `processing` or `capturing`): an intent has one try at a time (`idx_payment_attempts_one_active_per_intent`).
 - At most one attempt per intent can be `capturing` or `succeeded` (`idx_payment_attempts_one_capture_per_intent`). With one active attempt this already follows, but it stays as a cheap safety net against double charges.
 - One active gateway per account and environment (until routing exists), and only a verified gateway (capabilities checked) can be active.
 - Currencies are three uppercase letters.
 - An attempt has no amount of its own: it always charges its intent's amount and currency, so the two can never disagree.
-- Amounts are positive; `succeeded`, `canceled` and `complete` require their timestamps.
+- Amounts are positive; `succeeded`, `canceled` and `complete` require their timestamps, and an attempt that is `capturing` or `succeeded` has `capturing_at`.
 - Idempotency keys are unique per account and environment.
 - A gateway request with an attempt also has that attempt's intent (a check and a composite foreign key).
 
 ### Indexes
 
 - `payment_intents (account_id, environment, created_at DESC)` serves the dashboard's payments list. On 200,000 rows it ran in 0.1 ms instead of 9.8 ms without it.
-- `payment_attempts (updated_at) WHERE status = 'capturing'` serves the reconcile job. It only holds attempts that are capturing right now, so it stays tiny.
-- `payment_intents (account_id, environment, external_id)` finds a payment by the caller's reference.
+- `payment_attempts (capturing_at) WHERE status = 'capturing'` serves the reconcile job. It only holds attempts that are capturing right now, so it stays tiny. The clock is `capturing_at`, set once when the attempt enters `capturing`, not `updated_at`, which any later write would reset.
+- `payment_intents (account_id, environment, external_id)` finds a payment by the caller's reference. It is not unique: one order may need several intents (a canceled one, then a new one). With the public API, merchants avoid duplicates with an idempotency key on create.
 - `gateway_requests (payment_intent_id, started_at)` and `(gateway_id, started_at)` serve the payment timeline and the gateway's own history.
 
 ## 5. Flows
@@ -172,14 +172,14 @@ sequenceDiagram
     F-->>B: Paid
 ```
 
-1. `GET /c/cs_x`. `CheckoutSessionService.Get` returns the checkout view: merchant name, amount, description, and the methods to offer. Methods come from the active gateway's capabilities (stored in `gateways.config`) filtered by the session's currency. For each method, the adapter's `Prepare` returns what the page needs to render it (for cards: an MPGS session id and the hosted fields script URL). The MPGS call is logged in `gateway_requests`, tagged with the intent. The page renders the card form and the Apple Pay button. No attempt exists.
+1. `GET /c/cs_x`. `CheckoutSessionService.Get` returns the checkout view: merchant name, amount, description, and the methods to offer. Methods come from the active gateway's capabilities (stored in `gateways.capabilities`) filtered by the session's currency. For each method, the adapter's `Prepare` returns what the page needs to render it (for cards: an MPGS session id and the hosted fields script URL). The MPGS call is logged in `gateway_requests`, tagged with the intent. The page renders the card form and the Apple Pay button. No attempt exists.
 2. The customer types the card into MPGS hosted fields (card data goes to MPGS, never to us) and clicks Pay, which posts the MPGS session id and an idempotency key. `PaymentIntentService.CreateAttempt`:
    - checks the session is open and the intent is not paid;
    - retrieves the MPGS session from the server: it belongs to this merchant and holds card details (brand, last 4 → `payment_method_details`);
    - inserts the attempt (`created`); the amount comes from the intent, never the browser;
    - calls `adapter.Start(attempt)`: MPGS `INITIATE_AUTHENTICATION` and `AUTHENTICATE_PAYER` (HTTP calls logged automatically, tagged with the attempt);
-   - applies the returned step through `transition`: `gateway_data`, `payment_method_details`, and `requires_action` with `next_action` = 3-D Secure challenge.
-3. The browser renders the challenge. When the customer finishes, the bank's page posts back (through MPGS) to our return URL, which we give MPGS as `authentication.redirectResponseUrl`: `POST {CHECKOUT_URL}/c/cs_x/attempts/att_y/return`. The endpoint needs no other authentication: it only triggers a fresh read of the result from the gateway, so a forged call cannot change any outcome (5.6.1). It replies with a tiny page that tells the checkout to refresh the attempt. `PaymentIntentService.ContinueAttempt` → `adapter.Continue` (reads the authentication result) → `transition` → `processing`.
+   - applies the returned step through `transition`: `gateway_data`, `payment_method_details`, and `requires_action` with `next_action` = 3-D Secure challenge. With frictionless 3-D Secure there is no challenge: the step is `processing` with the result, and `CreateAttempt` goes on to step 4 itself.
+3. The browser renders the challenge. When the customer finishes, the bank's page posts back (through MPGS) to our return URL, which we give MPGS as `authentication.redirectResponseUrl`: `POST {CHECKOUT_URL}/c/cs_x/attempts/att_y/return`. The endpoint needs no other authentication: it only triggers a fresh read of the result from the gateway, so a forged call cannot change any outcome (5.10). It replies with a tiny page that tells the checkout to refresh the attempt. `PaymentIntentService.ContinueAttempt` → `adapter.Continue` (reads the authentication result) → `transition` → `processing`.
 4. Still inside `ContinueAttempt`, once authentication succeeded (no extra browser round trip): `transition` → `capturing`, committed before the call (locks the intent); `adapter.Capture`: MPGS `PAY` with the deterministic transaction id `capture`; `transition` → `succeeded`: intent succeeded, session complete.
 
 ### 5.2 Unknown capture
@@ -196,12 +196,12 @@ sequenceDiagram
     Note over F: attempt stays capturing, customer sees "We're confirming your payment"
     R->>M: Retrieve Transaction (order = attempt id, transaction capture)
     M-->>R: found and approved, found and declined, or not found
-    Note over R: transition to succeeded, or failed (not found: processing_error)
+    Note over R: transition to succeeded, or failed (not found for 10 minutes: processing_error)
 ```
 
 The PAY call times out. Its request row has no response (`http_status` NULL, `error` set); the attempt stays `capturing`, because it was committed as `capturing` before the call. The customer sees "We're confirming your payment". The one-capture index blocks any other attempt from capturing.
 
-The reconcile job (River, every minute) finds attempts that have been `capturing` for over a minute, asks the adapter (`Status`), which finds the payment from the attempt alone, and transitions to `succeeded` or `failed`. If the gateway cannot answer, the attempt stays `capturing` and the job retries with backoff, alerting after a long time.
+The reconcile job (River, every minute) finds attempts that have been `capturing` for over a minute, asks the adapter (`Status`), which finds the payment from the attempt alone, and transitions to `succeeded` or `failed`. If the gateway cannot answer, the attempt stays `capturing` and the job retries with backoff, alerting a person after an hour.
 
 No response before capture (preparing or authenticating) moves no money, so the attempt becomes `failed` and the customer can try again.
 
@@ -213,7 +213,7 @@ The rule that makes this work: **an adapter must be able to reconcile from the a
 
 ### 5.3 Payment requests and links
 
-A one-time payment request is a checkout session the merchant creates in the dashboard, with a longer expiry if needed, and shares as `/c/cs_...` (for example on WhatsApp). A session has one intent and an intent is paid at most once (4), so a request opened by two people is still paid once: they are two tabs on one session (5.4).
+A one-time payment request is a checkout session the merchant creates in the dashboard, with a longer expiry if needed, and shares as `/c/cs_...` (for example on WhatsApp). A session has one intent and an intent is paid at most once (section 4), so a request opened by two people is still paid once: they are two tabs on one session (5.4).
 
 A payment link is reusable. `GET /l/plink_x` shows a page with a Pay button and creates nothing (link previews in WhatsApp and other apps must not create sessions). `POST` creates a fresh session and its intent and redirects to `/c/cs_...`. Every customer gets their own session, so links take no part in the money rules and `transition` never touches them.
 
@@ -224,7 +224,7 @@ An intent has one active attempt at a time. When tab B tries to pay while tab A'
 - Wait: the page follows the session and shows the result when A's attempt ends.
 - Pay here instead: A's attempt is canceled (`customer_canceled`), then B starts its own. Refused while A's attempt is `capturing`, because money is moving; B shows "Confirming your payment..." until it resolves.
 
-Whoever holds the session URL can take over, so someone with a shared URL could keep interrupting another person's attempt. That is griefing, not a way to move money wrongly (5.6.1); session URLs are meant for one payer.
+Whoever holds the session URL can take over, so someone with a shared URL could keep interrupting another person's attempt. That is griefing, not a way to move money wrongly (5.10); session URLs are meant for one payer.
 
 ### 5.5 Canceling
 
@@ -236,16 +236,10 @@ Canceling is refused while an attempt is `capturing` or after one `succeeded`: a
 
 ### 5.6 Expiry
 
-- Attempts expire 15 minutes after creation (`expires_at`). The expiry job (River) moves open ones (`created`, `requires_action`, `processing`) to `expired`. The services also check `expires_at` on every call, so an attempt past its time is refused even before the job runs. Nobody resets anything by hand.
+- Attempts expire 15 minutes after creation, or when their session expires if that is sooner (`expires_at`). The expiry job (River) moves open ones (`created`, `requires_action`, `processing`) to `expired`. The services also check `expires_at` on every call, so an attempt past its time is refused even before the job runs. Nobody resets anything by hand.
 - Sessions expire after 24 hours by default. A session opened from a link expires at the earlier of 24 hours and the link's `expires_at`. A "request a payment" session can be given a longer expiry.
 - When a session expires unpaid, the job moves it to `expired`, cancels its intent with reason `expired`, and expires its open attempts. An attempt that is `capturing` is left to the reconcile job.
 - A link refuses new sessions once it is inactive or past its `expires_at`.
-
-### 5.6.1 Who can act on a session
-
-The session URL (`/c/cs_...`) is the key, as with Stripe Checkout. Anyone who has it can see the merchant, amount and description, pay it, see a 3-D Secure challenge without being able to pass it, trigger a continue (which only re-reads the result from the gateway) or take over an in-progress attempt that is not capturing (minor griefing; the customer retries). None of this can move money wrongly: the gateway and the database decide every outcome.
-
-Attempts are not tied to the browser that started them. The 3-D Secure return happens inside the bank's iframe, where browsers often block cookies, so a cookie-bound attempt secret would break real payments, and a token in the URL would end up in logs. Custom UIs built on the API later get a per-intent client secret.
 
 ### 5.7 Apple Pay
 
@@ -290,10 +284,16 @@ Any client, our hosted checkout or a merchant's own UI, builds on the same contr
 
 A `complete` session shows "Paid"; an `expired` or `canceled` session explains why and shows no form.
 
-- While the attempt is `created`, `processing`, `requires_action` or `capturing`, the page polls `GetAttempt` every two seconds and switches screens when the status changes. Streaming can replace polling later.
+- While the attempt is `created`, `processing`, `requires_action` or `capturing`, the page polls `GetAttempt` every two seconds and switches screens when the status changes. While the attempt is `processing`, it calls `ContinueAttempt` instead, so a "check later" answer from the gateway is read again (6.8). Streaming can replace polling later.
 - Creating an attempt is refused while another attempt on the intent is active, unless the customer takes over (5.4). Nothing is canceled automatically. `customer_canceled` is set only when a client cancels: the cancel button, switching method in the same tab (cancel the current attempt, then start the new one), or taking over. A closed tab's attempt simply expires.
-- Each tab has its own attempt. After creating one, the page puts its id in the URL (`/c/cs_...?attempt=att_...`), so a reload resumes exactly that attempt. Without it, the page shows a fresh form and any old open attempt simply expires. Attempt ids are random like session ids, so knowing one grants the same limited powers as the session URL (5.6.1).
+- Each tab has its own attempt. After creating one, the page puts its id in the URL (`/c/cs_...?attempt=att_...`), so a reload resumes exactly that attempt. Without it, the page shows a fresh form and any old open attempt simply expires. Attempt ids are random like session ids, so knowing one grants the same limited powers as the session URL (5.10).
 - If the bank's challenge times out while the page is open, the 3-D Secure standard has the bank send a final "not authenticated" answer back through the iframe, so the attempt fails with `authentication_failed` and the page offers a retry. This comes from the 3-D Secure standard, not MPGS's docs; it is on the list to confirm on the sandbox.
+
+### 5.10 Who can act on a session
+
+The session URL (`/c/cs_...`) is the key, as with Stripe Checkout. Anyone who has it can see the merchant, amount and description, pay it, see a 3-D Secure challenge without being able to pass it, trigger a continue (which only re-reads the result from the gateway) or take over an in-progress attempt that is not capturing (minor griefing; the customer retries). None of this can move money wrongly: the gateway and the database decide every outcome.
+
+Attempts are not tied to the browser that started them. The 3-D Secure return happens inside the bank's iframe, where browsers often block cookies, so a cookie-bound attempt secret would break real payments. The session id and the attempt id in the URL are the keys instead. URLs end up in logs, which is accepted because each id grants only the limited powers above. A stronger secret never goes in a URL: custom UIs built on the API later get a per-intent client secret, passed to their page in code.
 
 ## 6. Interfaces
 
@@ -318,6 +318,7 @@ type PaymentIntentService interface {
 // Used only by River jobs; never exposed as an RPC.
 type PaymentJobs interface {
     ReconcileAttempt(ctx, ReconcileAttemptRequest) (*Attempt, error)
+    ExpireAttempts(ctx, ExpireAttemptsRequest) error
     ExpireSessions(ctx, ExpireSessionsRequest) error
 }
 
@@ -336,7 +337,18 @@ type PaymentLinkService interface {
 }
 ```
 
-These are Go interfaces with plain Go request and response types. The protos come later and follow the same request/response shape, one RPC per method of the three public services; `PaymentJobs` has no RPC. Exact fields are settled while writing the protos.
+These are Go interfaces with plain Go request and response types. The protos come later and follow the same request/response shape, one RPC per method of the three public services; `PaymentJobs` has no RPC. `GatewayService` (6.10) is a dashboard-only Connect service for now; it may join the public API later, for headless setups. Exact fields are settled while writing the protos.
+
+Every call has a caller, and each method says who may make it:
+
+| Caller | Identified by | May call |
+|---|---|---|
+| Merchant | a dashboard login (later also an API key) | everything for its own account, except the customer's attempt calls below |
+| Customer, holding a session | the session id in the URL (5.10) | `CheckoutSessionService.Get`, and `CreateAttempt`, `GetAttempt`, `ContinueAttempt`, `CancelAttempt` on that session's intent |
+| Anyone with a link | the link id in the URL | `PaymentLinkService.Get` (the public page) and `Open` |
+| River jobs | running inside the server | `PaymentJobs` |
+
+`CancelAttempt` is the customer's button only; merchants cancel intents and sessions (5.5).
 
 The hosted checkout uses these services the way a merchant's own UI would: no private methods exist for it.
 
@@ -364,18 +376,20 @@ type Step struct {
 - Adapters never touch the database. They make their HTTP calls and return a step; the service applies it through `transition`.
 - Adapters are plain calls. The earlier design returned prepared commands (thunks) so the service could log each call and save its transaction id before sending. Both reasons are gone: the HTTP transport logs every call, and ids are deterministic or searchable (5.2).
 - Before `Capture`, the service commits the attempt as `capturing`. No database transaction is ever held open across a gateway call; a 30-second call would hold row locks for 30 seconds.
+- Only the call whose move to `capturing` won may call `Capture`. The row lock lets exactly one win, so a second return POST finds the attempt already `capturing` and only reads it.
+- `Capture` runs with `context.WithoutCancel`, so a customer closing the tab never aborts a PAY in flight. A crash during the call is covered by reconcile (5.2).
 
-**Request logging.** Every adapter's HTTP client is wrapped in a recording transport (an `http.RoundTripper`). It writes a `gateway_requests` row before sending and finishes it after, tagged with the gateway, intent and attempt carried in the request context. The adapter supplies a redaction function, because only it knows which fields of its payloads are sensitive.
+**Request logging.** Every adapter's HTTP client is wrapped in a recording transport (an `http.RoundTripper`). It writes a `gateway_requests` row before sending and finishes it after, tagged with the gateway, intent and attempt carried in the request context.
 
-Headers are never logged: the MPGS API password travels in the `Authorization` header. Bodies are stored as they are for now; with hosted fields they contain no full card numbers. Body redaction is added when an adapter needs it.
+Headers are never logged: the MPGS API password travels in the `Authorization` header. Bodies are stored as they are for now; with hosted fields they contain no full card numbers. Body redaction is added when an adapter needs it; the adapter supplies it, because only it knows which fields of its payloads are sensitive.
 
 The log fails open: if writing a row fails, the request is still sent and the failure goes to application logs. The log is observability, never what keeps money safe; the attempt state and the deterministic ids are. Each log write has a short timeout so a slow database cannot slow payments down.
 
 ### 6.3 Transition
 
-One function in the payments package is the only code that writes attempt, intent and session status. It runs in one database transaction, locks rows in a fixed order (intent, then attempts) so two transitions can never deadlock, validates the move, sets the fields below, and (later) writes outbox events. HTTP handlers, River jobs and provider callbacks all reach it through the services.
+One function in the payments package is the only code that writes attempt, intent and session status. It runs in one database transaction, locks rows in a fixed order (intent, then session, then attempts) so two transitions can never deadlock, validates the move, sets the fields below, and (later) writes outbox events. HTTP handlers, River jobs and provider callbacks all reach it through the services.
 
-How it is safe under concurrency: Postgres runs at its default isolation level (read committed), and `transition` takes row locks with `SELECT ... FOR UPDATE` in the fixed order above before reading the state it changes. The partial unique indexes back this up: even if two transactions raced, the database itself refuses a second capture.
+How it is safe under concurrency: Postgres runs at its default isolation level (read committed), and `transition` takes row locks with `SELECT ... FOR UPDATE` in the fixed order above before reading the state it changes. Every path follows that order, including canceling and expiring a session: they read the session's intent id first (it never changes) and lock the intent before the session. The partial unique indexes back this up: even if two transactions raced, the database itself refuses a second capture.
 
 Time always comes from the database (`NOW()`), never from the server's clock, so expiry checks agree across all running pods.
 
@@ -387,14 +401,14 @@ Every update query sets `updated_at = NOW()` itself; there are no triggers.
 |---|---|---|---|
 | `created` | `requires_action` | 3-D Secure needs a challenge | `next_action`, `gateway_data`, `payment_method_details` |
 | `created` | `processing` | frictionless 3-D Secure, or waiting for the result | `gateway_data`, `payment_method_details` |
-| `created` | `capturing` | a method with no authentication step (Apple Pay) | `authentication_method = device`, `payment_method_details` |
+| `created` | `capturing` | a method with no authentication step (Apple Pay) | `authentication_method = device`, `payment_method_details`, `capturing_at` |
 | `created`, `requires_action`, `processing` | `failed` | declined or errored before capture | `failure_code`, authentication fields if known |
 | `requires_action` | `processing` | the customer came back from the bank | `next_action = NULL` |
-| `requires_action` | `expired` | `expires_at` passed | `next_action = NULL` |
-| `processing` | `capturing` | authenticated | `authentication_method`, `authentication_status`, `eci`, `liability_shift` |
+| `created`, `requires_action`, `processing` | `expired` | `expires_at` passed, or its session expired | `next_action = NULL` |
+| `processing` | `capturing` | authenticated | `authentication_method`, `authentication_status`, `eci`, `liability_shift`, `capturing_at` |
 | `created`, `requires_action`, `processing` | `canceled` | the merchant or the customer | `cancellation_reason`, `next_action = NULL` |
 | `capturing` | `succeeded` | approved | |
-| `capturing` | `failed` | a definite decline, or reconcile found nothing at the gateway | `failure_code` |
+| `capturing` | `failed` | a definite decline, or reconcile found nothing at the gateway for 10 minutes (6.7) | `failure_code` |
 | `succeeded`, `failed`, `expired`, `canceled` | none | final | |
 
 `capturing` is never canceled or expired; only the gateway's answer ends it.
@@ -413,7 +427,7 @@ Every update query sets `updated_at = NOW()` itself; there are no triggers.
 
   `succeeded` and `canceled` are the intent's own decisions and final; the statuses in between mirror the current attempt. The intent's status is stored because the payments list filters on it, and only `transition` writes it.
 
-**Intent:** derived as above, plus three direct moves:
+**Intent:** derived as above. How it ends:
 
 | To | When | Fields set |
 |---|---|---|
@@ -429,7 +443,7 @@ Every update query sets `updated_at = NOW()` itself; there are no triggers.
 | `open` | `expired` | `expires_at` passed and no attempt is capturing | |
 | `open` | `canceled` | the merchant canceled it (only merchants cancel sessions, so there is no reason column); same rules as canceling the intent | `canceled_at` |
 
-### Failure codes
+### 6.3.1 Failure codes
 
 Our own stable codes, part of the public API: few, snake_case, and only ever added, never renamed. They are Go constants stored as `VARCHAR`. The gateway's raw code is not stored on the attempt; it is in the request log's response body, shown in the dashboard's "Debug requests" section.
 
@@ -440,8 +454,9 @@ Our own stable codes, part of the public API: few, snake_case, and only ever add
 | `expired_card` | The card has expired. |
 | `incorrect_cvc` | Wrong security code. |
 | `authentication_failed` | The customer failed or did not complete 3-D Secure. |
+| `authentication_unavailable` | 3-D Secure could not run for this card. |
 | `blocked` | Blocked by risk or fraud rules. |
-| `canceled_by_payer` | The customer aborted at the bank or gateway. |
+| `customer_aborted` | The customer aborted at the bank or gateway. |
 | `card_not_supported` | The card type or method is not enabled for this merchant. |
 | `retry_limit_exceeded` | Too many tries with this card. |
 | `processing_error` | Something failed on our side or the gateway's, and nothing was charged. |
@@ -452,11 +467,11 @@ Our own stable codes, part of the public API: few, snake_case, and only ever add
 - Protos live in `fidraq.payments.v1`, with one service per resource: `PaymentIntentService`, `CheckoutSessionService`, `PaymentLinkService`. They carry `google.api.http` annotations from the start (for example `get: "/v1/payment_intents/{id}"`), which keeps the design resource-oriented.
 - Later, Vanguard serves the same handlers as REST from those annotations, and an OpenAPI spec is generated from the protos. Secret API keys, rate limits, `buf breaking` in CI and the public docs come with the launch, after v0.1.
 - Until launch the protos are internal and may change.
-- The hosted checkout is a client of the same services, like a merchant's own UI would be. Its small script calls the Connect endpoints with plain `fetch` and a session-scoped secret that can only touch its own session.
-- Checkout pages live on one domain set by `CHECKOUT_URL` (for example `checkout.fidraq.com`), at `/c/cs_...` and `/l/plink_...`. The old per-merchant custom domains (the tenant-by-host middleware) are removed in v1. Because sessions and links are found by their global ids, custom domains can return later as a mapping from host to account, without changing URLs or ids; the README must stop advertising them until then.
-- The checkout session id in the URL is what lets the browser act on that session, as with Stripe Checkout. That only works because ids are random UUIDs (version 4, from `gen_random_uuid()`); they must never become time-ordered UUIDs (version 7), which would make URLs guessable. Custom UIs built on the API later get a per-intent client secret instead.
+- The hosted checkout is a client of the same services, like a merchant's own UI would be. Its small script calls the Connect endpoints with plain `fetch`, using the session id from the URL, which can only touch its own session (5.10).
+- Checkout pages live on one domain set by `CHECKOUT_URL` (for example `checkout.fidraq.com`), at `/c/cs_...` and `/l/plink_...`. The old per-merchant custom domains (the tenant-by-host middleware) are removed in v1. Because sessions and links are found by their global ids, custom domains can return later as a mapping from host to account, without changing URLs or ids; the README no longer advertises them.
+- The checkout session id in the URL is what lets the browser act on that session. That only works because ids are random UUIDs (version 4, from `gen_random_uuid()`); they must never become time-ordered UUIDs (version 7), which would make URLs guessable. Custom UIs built on the API later get a per-intent client secret instead.
 - Public ids are a prefix plus the UUID encoded in base62 (22 characters), for example `pi_7n42DGM5Tflk9n8mt7Fhc7`: `pi_` (intents), `cs_` (sessions), `plink_` (links), `att_` (attempts). The database stores plain UUIDs; encoding and decoding happen only at the edges. They are fixed before checkout URLs ship, because URLs cannot change afterwards.
-- Idempotency keys travel in an `Idempotency-Key` HTTP header, as with Stripe; the transport passes the key to the service as a parameter. In v0.1 only attempt creation needs one (from the checkout). With the public API, creating intents, sessions and links accepts one too, backed by a request-level `idempotency_keys` table (key, request hash, stored response); calls between contexts (6.5) rely on it.
+- Idempotency keys travel in an `Idempotency-Key` HTTP header; the transport passes the key to the service as a parameter. In v0.1 only attempt creation needs one (from the checkout): a repeated key returns the stored attempt if it is for the same intent and payment method, and `ErrIdempotencyMismatch` otherwise. With the public API, creating intents, sessions and links accepts one too, backed by a request-level `idempotency_keys` table (key, request hash, stored response); calls between contexts (6.5) rely on it.
 - Money in the API is a decimal string plus a currency (`"150.00"`, `"SAR"`). In Go it is always `money.MinorAmount` and `money.Currency`.
 
 ### 6.5 Boundaries
@@ -493,7 +508,7 @@ internal/payments/
   links.go        Links     → PaymentLinkService
   jobs.go         Jobs      → PaymentJobs (River workers only)
   gateways.go     Gateways  → GatewayService (the dashboard)
-  interfaces.go   the four interfaces (mocks are generated from them)
+  interfaces.go   the service interfaces (mocks are generated from them)
   adapter.go      the GatewayAdapter interface, Step, and the recording transport
   mpgs/           the MPGS adapter
 ```
@@ -536,18 +551,18 @@ Before trusting any response, the adapter checks that it matches the request: or
 | `FAILURE` + `INVALID_CSC`, `DECLINED_CSC` | `failed`, `incorrect_cvc` | |
 | `FAILURE` + `AUTHENTICATION_FAILED`, `NOT_ENROLLED_3D_SECURE` | `failed`, `authentication_failed` | |
 | `FAILURE` + `BLOCKED` | `failed`, `blocked` | Risk or 3-D Secure blocking rules. |
-| `FAILURE` + `ABORTED`, `CANCELLED` | `failed`, `canceled_by_payer` | |
+| `FAILURE` + `ABORTED`, `CANCELLED` | `failed`, `customer_aborted` | |
 | `FAILURE` + `EXCEEDED_RETRY_LIMIT` | `failed`, `retry_limit_exceeded` | |
 | `FAILURE` + `NOT_SUPPORTED` | `failed`, `card_not_supported` | |
 | `FAILURE` + `DECLINED_AVS`, `DECLINED_AVS_CSC`, `DECLINED_PAYMENT_PLAN`, `DECLINED_PIN_REQUIRED`, `DECLINED_INVALID_PIN` | `failed`, `card_declined` | Rare for online card payments. |
-| `FAILURE` + `LOCK_FAILURE` | `failed`, `processing_error` | "Order locked - another transaction is in progress for this order". Nothing was charged by this call; we never resend it. |
+| `FAILURE` + `LOCK_FAILURE` | stays `capturing` | "Order locked - another transaction is in progress for this order". The order is this attempt, so something is happening on it and the outcome is unknown; reconcile decides. We never resend. |
 | `PARTIALLY_APPROVED` | stays `capturing`, alert | Should never happen: every PAY sends `order.acceptPartialAmount: false`, and the docs say that without it "the transaction will be rejected" when the full amount is not available. If it arrives anyway, money may have moved for a lesser amount, so a person checks it. |
 | `PENDING`, `UNKNOWN`, or codes `SUBMITTED`, `PENDING`, `TIMED_OUT`, `UNKNOWN`, `ACQUIRER_SYSTEM_ERROR`, `SYSTEM_ERROR` | stays `capturing` | Reconcile decides (5.2). |
 | `ERROR` with cause `INVALID_REQUEST` | `failed`, `processing_error` | The request was rejected and not processed; it is our bug, so it also alerts. |
 | `ERROR` with cause `SERVER_BUSY`, `SERVER_FAILED`, `REQUEST_REJECTED` | stays `capturing` | Not documented as "nothing happened", so it is treated as unknown. |
 | No response (timeout, connection reset) | stays `capturing` | 5.2. |
 
-**Reconcile.** The job is generic: it finds attempts that have been `capturing` for over a minute and calls the adapter's `Status`. The logic is per gateway, inside the adapter. For MPGS, `Status` calls [Retrieve Transaction](https://credimax.gateway.mastercard.com/api/documentation/apiDocumentation/rest-json/version/100/operation/Transaction%3a%20%20Retrieve%20Transaction.html) for transaction `capture` in order `<attempt id>`, checks it matches the attempt, and maps it with the same table. If MPGS reports that the transaction does not exist, the capture never arrived and the attempt is `failed` with `processing_error`. Confirmed on the Credimax sandbox: HTTP 400 with `{"result": "ERROR", "error": {"cause": "INVALID_REQUEST", "explanation": "Unable to find order <order> and transaction <transaction> for merchant <merchant>"}}`. The request in `khazina/internal/clients/mpgs/hurl/retrieve-transaction.hurl` repeats the check. `INVALID_REQUEST` also means a malformed request, so this reading is only used for our own retrieve call; anything else unexpected alerts instead of guessing. If the answer is still uncertain, the attempt stays `capturing`, the job retries with backoff, and after an hour it alerts a person.
+**Reconcile.** The job is generic: it finds attempts whose `capturing_at` is over a minute old and calls the adapter's `Status`. The logic is per gateway, inside the adapter. For MPGS, `Status` calls [Retrieve Transaction](https://credimax.gateway.mastercard.com/api/documentation/apiDocumentation/rest-json/version/100/operation/Transaction%3a%20%20Retrieve%20Transaction.html) for transaction `capture` in order `<attempt id>`, checks it matches the attempt, and maps it with the same table. If MPGS reports that the transaction does not exist, that is not final at once: a PAY can still land after our call gave up. It is final only when two reads, minutes apart, both find nothing and the PAY started at least 10 minutes earlier; then the capture never arrived and the attempt is `failed` with `processing_error`. Until then the attempt stays `capturing`. Confirmed on the Credimax sandbox: HTTP 400 with `{"result": "ERROR", "error": {"cause": "INVALID_REQUEST", "explanation": "Unable to find order <order> and transaction <transaction> for merchant <merchant>"}}`. The request in `khazina/internal/clients/mpgs/hurl/retrieve-transaction.hurl` repeats the check. `INVALID_REQUEST` also means a malformed request, so this reading is only used for our own retrieve call; anything else unexpected alerts instead of guessing. If the answer is still uncertain, the attempt stays `capturing`, the job retries with backoff, and after an hour it alerts a person.
 
 ### 6.8 MPGS authentication mapping
 
@@ -561,10 +576,10 @@ Authentication uses [Initiate Authentication](https://credimax.gateway.mastercar
 | `AUTHENTICATION_ATTEMPTED` | `authentication_status = attempted`, then capture |
 | `AUTHENTICATION_FAILED`, `AUTHENTICATION_REJECTED` | `failed`, `authentication_failed` (the docs: "You should not proceed with this transaction") |
 | recommendation `DO_NOT_PROCEED` or `DO_NOT_PROCEED_ABANDON_ORDER` | `failed`, `card_declined` |
-| recommendation `CHECK_TRANSACTION_STATUS_LATER` | stays `processing`; the result is read again |
+| recommendation `CHECK_TRANSACTION_STATUS_LATER` | stays `processing`; the checkout calls `ContinueAttempt` again while it polls (5.9). If the tab is closed, the attempt expires; no money has moved. |
 | `AUTHENTICATION_EXEMPT` | capture with `liability_shift = false`: an exemption from 3-D Secure was granted, so the merchant keeps the fraud liability. Rare outside Europe. |
-| `AUTHENTICATION_UNAVAILABLE` | `failed`, `authentication_failed`: 3-D Secure could not run, so no payment goes through unprotected. A per-merchant setting to accept these (keeping the liability) can come later. |
-| `AUTHENTICATION_NOT_SUPPORTED` | `failed`, `card_not_supported`, for the same reason. |
+| `AUTHENTICATION_UNAVAILABLE` | `failed`, `authentication_unavailable`: 3-D Secure could not run, so no payment goes through unprotected. This is a business decision: it gives up some sales, often on foreign cards, so the merchant never carries the fraud liability. A per-merchant setting to accept these can come later. |
+| `AUTHENTICATION_NOT_SUPPORTED` | `failed`, `authentication_unavailable`, for the same reason. |
 
 ### 6.9 Errors
 
@@ -616,7 +631,7 @@ Rules that keep payments in flight safe:
 - A gateway's identity never changes: its type, host and merchant id are fixed. A different MPGS merchant is a new gateway. Only the password can be rotated, and rotating it verifies again.
 - Only a verified gateway can be active (a check constraint).
 - Delete is soft: the row stays, so history and attempts in flight still resolve it.
-- The password is never returned by the API (only whether it is set) and never logged (headers are not logged). It is encrypted with AES-GCM, with a key version at the start of the stored value so the encryption key can be rotated later.
+- The password is never returned by the API (only whether it is set) and never logged (headers are not logged). It is encrypted with AES-GCM, with a key version at the start of the stored value so the encryption key can be rotated later. The key is the `ENCRYPTION_KEY` setting (base64, required at startup).
 
 Capabilities are refreshed by a daily job and by a "refresh" button.
 
@@ -676,9 +691,11 @@ Later, before the feature that needs them:
 
 Migrations run as their own step (`khazina migrate`), as a Kubernetes job or Helm hook before a new version rolls out, not when the server starts, so several pods never race to migrate. In development `mise run dev` still runs it automatically. River's own tables are installed with River's migrator (`rivermigrate`) in the same step. River tracks its migrations in its own `river_migration` table, separate from ours, so the two never interfere ([River migrations](https://riverqueue.com/docs/migrations)). River supports a separate Postgres schema, but it stays in the default schema with everything else.
 
+Adding an enum value (`ALTER TYPE ... ADD VALUE`) and the first use of that value go in separate migrations: Postgres does not allow a new value to be used in the transaction that added it ([ALTER TYPE](https://www.postgresql.org/docs/current/sql-altertype.html)).
+
 `main` keeps the old system working and serves as the reference and demo. The rewrite happens on `schema-redesign` in small commits, each building and passing its own tests; old code is deleted as new code replaces it. The branch merges when the end-to-end tests pass again.
 
-The design ships in two releases. v0.1.0 is everything here except Apple Pay (5.7), which waits on Apple's merchant certificates and the bank enabling wallets on the merchant's MID (8). v0.1.1 adds Apple Pay in its own pull request, from this same design.
+The design ships in two releases. v0.1.0 is everything here except Apple Pay (5.7), which waits on Apple's merchant certificates and the bank enabling wallets on the merchant's MID (section 8). v0.1.1 adds Apple Pay in its own pull request, from this same design.
 
 1. Schema
 2. Queries and sqlc
@@ -686,8 +703,8 @@ The design ships in two releases. v0.1.0 is everything here except Apple Pay (5.
 4. `transition` and the money-safety tests (two captures racing, two tabs on one session)
 5. Services
 6. Checkout pages (templ, one component per action) and prefixed public ids
-7. River: reconcile and expiry jobs
-8. Dashboard: payments list and detail, links, gateway setup
+7. River: reconcile, expiry and the daily capabilities refresh
+8. Dashboard: payments list and detail, payment requests, links, gateway setup
 9. End-to-end tests: update the existing three, add declined, failed OTP, link, two tabs
 10. Tag v0.1.0
 11. Apple Pay (5.7), then tag v0.1.1
@@ -701,7 +718,7 @@ None of this is in v1. Each item is additive: new enum values, new tables or new
 - **Session modes and UI modes.** Sessions gain `mode` (`payment`, `setup`) with one foreign key per mode and a check that exactly the right one is set, never a polymorphic id; existing rows become `payment`. They also gain `ui_mode`, as in Stripe: `hosted_page` (v1), `embedded_page`, and `elements`, where the merchant draws the page and Fidraq still runs the session. `elements` comes with `fidraq.js`, served by the Fidraq server so it always matches its API version, with a small frontend adapter per gateway that mounts that gateway's hosted card fields (MPGS Hosted Session, CyberSource's equivalent) on the merchant's page; card data stays in the gateway's iframes. Merchants with their own order system skip sessions and drive an intent with a per-intent client secret.
 - **Local networks and co-badged cards.** mada works through MPGS as a card brand. Networks that need their own gateway (Benefit, KNET) appear as separate payment methods in the checkout, so the customer's button choice is the routing decision.
 - **More gateway adapters.** STC Pay and BenefitPay (approval in an app or by OTP), redirect-based gateways (Benefit, KNET), BNPL (needs an `authorized` status). Each one adds enum values and an adapter; attempt statuses, `next_action`, `gateway_data` and `payment_method_details` already cover them.
-- **Saved cards and recurring payments.** `payment_methods` (the card, gateway-neutral) → `payment_method_tokens` (one per gateway that stored it) → `mandates` (permission for future charges: one per subscription, created by a customer-present payment with 3-D Secure and used by merchant-initiated charges on the same gateway; the MPGS adapter maps a mandate to an MPGS "agreement"). Saving a card without charging it is a `setup_intents` flow, named after Stripe's SetupIntent: the same state machine style as payment intents, ending in a saved payment method and a mandate. Attempts gain a `payment_method_id`. `payer_ip` and `payer_user_agent` become nullable for charges without a customer present.
+- **Saved cards and recurring payments.** `payment_methods` (the card, gateway-neutral) → `payment_method_tokens` (one per gateway that stored it) → `mandates` (permission for future charges: one per subscription, created by a customer-present payment with 3-D Secure and used by merchant-initiated charges on the same gateway; the MPGS adapter maps a mandate to an MPGS "agreement"). Saving a card without charging it is a `setup_intents` flow, named after Stripe's SetupIntent: the same state machine style as payment intents, ending in a saved payment method and a mandate. Attempts gain `payment_method_id`, and `mandate_id` for charges made without the customer present; intents gain `setup_future_usage` for a "save this card" checkbox during a payment. `payer_ip` and `payer_user_agent` become nullable for charges without a customer present.
 - **Inbound notifications.** A `gateway_notifications` table for callbacks from providers: the raw payload, signature check, the provider's event id (processed once) and processing status. Kept separate from `gateway_requests`, which logs our own calls, because notifications drive transitions and must be processed exactly once; the dashboard shows both in one timeline.
 - **Events and webhooks.** An outbox table written by `transition` in the same transaction, delivered by River workers.
 - **Refunds** as their own table; the intent stays `succeeded`.
