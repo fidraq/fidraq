@@ -280,6 +280,7 @@ Any client, our hosted checkout or a merchant's own UI, builds on the same contr
 A `complete` session shows "Paid"; an `expired` or `canceled` session explains why and shows no form.
 
 - While the attempt is `created`, `processing`, `requires_action` or `capturing`, the page polls `GetAttempt` every two seconds and switches screens when the status changes. Streaming can replace polling later.
+- Creating an attempt never cancels other open attempts: with two tabs, or two people sharing a session URL, each would cancel the other's payment. The only automatic cancel is `superseded`, when another attempt succeeds. `customer_canceled` is set only when a client calls `CancelAttempt` for its own attempt, the one in its URL: the cancel button, or switching method in the same tab, which cancels the current attempt before starting the new one. A closed tab's attempt simply expires.
 - Each tab has its own attempt. After creating one, the page puts its id in the URL (`/c/cs_...?attempt=att_...`), so a reload resumes exactly that attempt. Without it, the page shows a fresh form and any old open attempt simply expires. Attempt ids are random like session ids, so knowing one grants the same limited powers as the session URL (5.6.1).
 - If the bank's challenge times out while the page is open, the 3-D Secure standard has the bank send a final "not authenticated" answer back through the iframe, so the attempt fails with `authentication_failed` and the page offers a retry. This comes from the 3-D Secure standard, not MPGS's docs; it is on the list to confirm on the sandbox.
 
@@ -392,7 +393,17 @@ Every update query sets `updated_at = NOW()` itself; there are no triggers.
 - Into `capturing`: if the session came from a link, lock the link and count its payments; if it has reached its limit, refuse before any money moves.
 - Into `capturing`: other open attempts are not canceled. They are only blocked from capturing by the one-capture index, because the capture may still fail and they remain a valid second chance.
 - Into `succeeded`: the intent becomes `succeeded` (`succeeded_at`), the session `complete` (`completed_at`), and every other open attempt on the intent `canceled` with reason `superseded`.
-- After every move, the intent's status is recomputed from its open attempts: `processing` if any is processing or capturing, otherwise `requires_action` if any requires action, otherwise `requires_payment_method`. Deriving it keeps the intent right when two tabs have attempts at once.
+- After every move, the intent's status is recomputed from all its attempts. The most advanced attempt decides: `succeeded` if one succeeded, otherwise `processing` if any is processing or capturing, otherwise `requires_action` if any requires action, otherwise `requires_payment_method`. Only `succeeded` and `canceled` are decisions about the intent itself; the statuses in between summarize how far its furthest attempt is. Because `transition` locks the intent row first, two attempts moving at once are applied one after the other, and each recomputation sees the other's result.
+
+  Two tabs on one intent:
+
+  | Moment | Tab A | Tab B | Intent |
+  |---|---|---|---|
+  | A starts 3-D Secure | `requires_action` | | `requires_action` |
+  | B starts, frictionless | `requires_action` | `processing` | `processing` |
+  | B is declined | `requires_action` | `failed` | `requires_action` |
+  | A authenticates and captures | `capturing` | `failed` | `processing` |
+  | A succeeds | `succeeded` | `failed` | `succeeded` |
 
 **Intent:** derived as above, plus three direct moves:
 
