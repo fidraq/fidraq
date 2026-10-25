@@ -227,10 +227,12 @@ A payment link is reusable. `GET /l/plink_x` shows a page with a Pay button and 
 
 ### 5.4 Two tabs on one session
 
-An intent has one active attempt at a time. When tab B tries to pay while tab A's attempt is active, the database refuses the new attempt and tab B shows "A payment is already in progress in another window", with two choices:
+An intent has one active attempt at a time. When tab B opens the session while tab A's attempt is active, it shows that attempt's screen and "A payment for this is already in progress" (tab A may be another person's phone), with two choices:
 
 - Wait: the page follows the session and shows the result when A's attempt ends.
 - Pay here instead: A's attempt is canceled (`customer_canceled`), then B starts its own. Refused while A's attempt is `capturing`, because money is moving; B shows "Confirming your payment..." until it resolves.
+
+If both tabs click Pay at the same moment, the database lets one attempt win; the other `CreateAttempt` gets `ErrConflict` carrying the active attempt, and that tab shows the same screen.
 
 Whoever holds the session URL can take over, so someone with a shared URL could keep interrupting another person's attempt. That is griefing, not a way to move money wrongly (5.10); session URLs are meant for one payer.
 
@@ -294,7 +296,8 @@ A `complete` session shows "Paid"; an `expired` or `canceled` session explains w
 
 - While the attempt is `created`, `processing`, `requires_action` or `capturing`, the page polls `GetAttempt` every two seconds and switches screens when the status changes. While the attempt is `processing`, it also calls `ContinueAttempt` at most every 5 seconds, so a "check later" answer from the gateway is read again (6.8). `GetAttempt` only reads our database; `ContinueAttempt` asks the gateway. Streaming can replace polling later.
 - Creating an attempt is refused while another attempt on the intent is active, unless the customer takes over (5.4). Nothing is canceled automatically. `customer_canceled` is set only when a client cancels: the cancel button, switching method in the same tab (cancel the current attempt, then start the new one), or taking over. A closed tab's attempt simply expires.
-- Each tab has its own attempt. After creating one, the page puts its id in the URL (`/c/cs_...?attempt=att_...`), so a reload resumes exactly that attempt. Without it, the page shows a fresh form and any old open attempt simply expires. Attempt ids are random like session ids, so knowing one grants the same limited powers as the session URL (5.10).
+- The page always shows the intent's active attempt: `CheckoutSessionService.Get` returns it, so any tab, reload or other device opens straight on its screen, and the card form appears only when none is active. Opening never creates an attempt; only Pay does. After creating one, the page puts its id in the URL (`/c/cs_...?attempt=att_...`), so a reload also shows how a finished attempt ended. Attempt ids are random like session ids, so knowing one grants the same limited powers as the session URL (5.10).
+- If a saved challenge cannot be shown again (the bank may refuse a second open), the page offers Pay here instead: cancel the attempt and start a new one with a fresh challenge. To be confirmed on the sandbox (section 8).
 - If the bank's challenge times out while the page is open, the 3-D Secure standard has the bank send a final "not authenticated" answer back through the iframe, so the attempt fails with `authentication_failed` and the page offers a retry. This comes from the 3-D Secure standard, not MPGS's docs; it is to be confirmed on the sandbox (section 8).
 
 ### 5.10 Who can act on a session
@@ -332,7 +335,7 @@ type PaymentJobs interface {
 
 type CheckoutSessionService interface {
     Create(ctx, CreateCheckoutSessionRequest) (*CheckoutSession, error) // creates the intent too
-    Get(ctx, GetCheckoutSessionRequest) (*CheckoutView, error)           // what the page shows
+    Get(ctx, GetCheckoutSessionRequest) (*CheckoutView, error)           // what the page shows, including the active attempt
     Cancel(ctx, CancelCheckoutSessionRequest) (*CheckoutSession, error)
 }
 
@@ -603,6 +606,8 @@ Roles exist in the schema but are not enforced in v0.1: every team member sees e
 
 A payment decline is not an error: `CreateAttempt` returns the attempt as `failed` with its failure code. Errors mean the request itself did not work.
 
+When `CreateAttempt` is refused because another attempt is active, the `ErrConflict` carries that attempt, so the client can show it without another call. Stripe's errors do the same with the `payment_intent` they concern ([Errors](https://docs.stripe.com/api/errors)).
+
 | Service error | Connect code | HTTP | Example |
 |---|---|---|---|
 | `ErrInvalid` | `invalid_argument` | 400 | bad amount, unknown currency |
@@ -687,6 +692,7 @@ Before the MPGS adapter (rollout step 3), on the Credimax sandbox:
 
 - Wait out a 3-D Secure challenge and check that a final "not authenticated" answer comes back (5.9).
 - Pay with a card that passes 3-D Secure without a challenge and record what Authenticate Payer returns, to confirm the frictionless row of 6.8.
+- Reload during a 3-D Secure challenge and check that the saved challenge can be shown again (5.9).
 
 Accepted, handled by the design:
 
