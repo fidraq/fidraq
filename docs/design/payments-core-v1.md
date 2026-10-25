@@ -172,42 +172,15 @@ sequenceDiagram
     F-->>B: Paid
 ```
 
-```
-1. GET /c/cs_x
-   CheckoutSessionService.Get returns the checkout view: merchant name, amount,
-   description, and the methods to offer. Methods come from the active gateway's
-   capabilities (stored in gateways.config) filtered by the session's currency.
-   For each method, the adapter's Prepare returns what the page needs to render it
-   (for cards: an MPGS session id and the hosted fields script URL).
-   The MPGS call is logged in gateway_requests, tagged with the intent.
-   The page renders the card form and the Apple Pay button. No attempt exists.
-
-2. Customer types the card into MPGS hosted fields (card data goes to MPGS, never to us)
-   and clicks Pay → POST with the MPGS session id and an idempotency key.
-   PaymentIntentService.CreateAttempt:
-     - check the session is open and the intent is not paid
-     - retrieve the MPGS session from the server: it belongs to this merchant and holds
-       card details (brand, last 4 → payment_method_details)
-     - insert the attempt (created); amount comes from the intent, never the browser
-     - adapter.Start(attempt): MPGS INITIATE_AUTHENTICATION and AUTHENTICATE_PAYER
-       (HTTP calls logged automatically, tagged with the attempt)
-     - apply the returned step through transition: gateway_data, payment_method_details,
-       requires_action with next_action = 3DS challenge
-
-3. The browser renders the challenge. When the customer finishes, the bank's page posts back
-   (through MPGS) to our return URL, which we give MPGS as authentication.redirectResponseUrl:
-   POST {CHECKOUT_URL}/c/cs_x/attempts/att_y/return
-   The endpoint needs no other authentication: it only triggers a fresh read of the result
-   from the gateway, so a forged call cannot change any outcome (5.6.1). It replies with a
-   tiny page that tells the checkout to refresh the attempt.
-   PaymentIntentService.ContinueAttempt → adapter.Continue (reads the authentication result)
-   → transition → processing
-
-4. Still inside ContinueAttempt, once authentication succeeded (no extra browser round trip):
-   transition → capturing, committed before the call (locks the intent)
-   adapter.Capture: MPGS PAY with the deterministic transaction id capture
-   transition → succeeded: intent succeeded, session complete
-```
+1. `GET /c/cs_x`. `CheckoutSessionService.Get` returns the checkout view: merchant name, amount, description, and the methods to offer. Methods come from the active gateway's capabilities (stored in `gateways.config`) filtered by the session's currency. For each method, the adapter's `Prepare` returns what the page needs to render it (for cards: an MPGS session id and the hosted fields script URL). The MPGS call is logged in `gateway_requests`, tagged with the intent. The page renders the card form and the Apple Pay button. No attempt exists.
+2. The customer types the card into MPGS hosted fields (card data goes to MPGS, never to us) and clicks Pay, which posts the MPGS session id and an idempotency key. `PaymentIntentService.CreateAttempt`:
+   - checks the session is open and the intent is not paid;
+   - retrieves the MPGS session from the server: it belongs to this merchant and holds card details (brand, last 4 → `payment_method_details`);
+   - inserts the attempt (`created`); the amount comes from the intent, never the browser;
+   - calls `adapter.Start(attempt)`: MPGS `INITIATE_AUTHENTICATION` and `AUTHENTICATE_PAYER` (HTTP calls logged automatically, tagged with the attempt);
+   - applies the returned step through `transition`: `gateway_data`, `payment_method_details`, and `requires_action` with `next_action` = 3-D Secure challenge.
+3. The browser renders the challenge. When the customer finishes, the bank's page posts back (through MPGS) to our return URL, which we give MPGS as `authentication.redirectResponseUrl`: `POST {CHECKOUT_URL}/c/cs_x/attempts/att_y/return`. The endpoint needs no other authentication: it only triggers a fresh read of the result from the gateway, so a forged call cannot change any outcome (5.6.1). It replies with a tiny page that tells the checkout to refresh the attempt. `PaymentIntentService.ContinueAttempt` → `adapter.Continue` (reads the authentication result) → `transition` → `processing`.
+4. Still inside `ContinueAttempt`, once authentication succeeded (no extra browser round trip): `transition` → `capturing`, committed before the call (locks the intent); `adapter.Capture`: MPGS `PAY` with the deterministic transaction id `capture`; `transition` → `succeeded`: intent succeeded, session complete.
 
 ### 5.2 Unknown capture
 
@@ -220,7 +193,7 @@ sequenceDiagram
     Note over F: attempt committed as capturing
     F->>M: PAY (transaction capture)
     M--xF: timeout, no response
-    Note over F: attempt stays capturing; customer sees "We're confirming your payment"
+    Note over F: attempt stays capturing, customer sees "We're confirming your payment"
     R->>M: Retrieve Transaction (order = attempt id, transaction capture)
     M-->>R: found and approved, found and declined, or not found
     Note over R: transition to succeeded, or failed (not found: processing_error)
