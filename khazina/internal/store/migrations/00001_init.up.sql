@@ -27,7 +27,7 @@ CREATE TYPE payment_attempt_status AS ENUM (
     'canceled'
 );
 CREATE TYPE payment_intent_cancellation_reason AS ENUM ('merchant_canceled', 'abandoned');
-CREATE TYPE payment_attempt_cancellation_reason AS ENUM ('superseded', 'merchant_canceled', 'customer_canceled');
+CREATE TYPE payment_attempt_cancellation_reason AS ENUM ('merchant_canceled', 'customer_canceled');
 CREATE TYPE authentication_method AS ENUM ('three_d_secure', 'device', 'none');
 CREATE TYPE authentication_status AS ENUM ('authenticated', 'attempted', 'failed', 'unavailable');
 
@@ -282,6 +282,9 @@ CREATE TABLE payment_attempts (
 );
 
 CREATE INDEX idx_payment_attempts_payment_intent ON payment_attempts (payment_intent_id);
+
+CREATE UNIQUE INDEX idx_payment_attempts_one_active_per_intent ON payment_attempts (payment_intent_id)
+    WHERE status IN ('created', 'requires_action', 'processing', 'capturing');
 
 CREATE UNIQUE INDEX idx_payment_attempts_one_capture_per_intent ON payment_attempts (payment_intent_id)
     WHERE status IN ('capturing', 'succeeded');

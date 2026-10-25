@@ -28,7 +28,7 @@ Goals for v1:
 
 Non-goals for v1 (the core is designed so they are additive later):
 
-- Saved cards, agreements and recurring charges.
+- Saved cards, mandates and recurring charges.
 - Refunds.
 - Billing (invoices, subscriptions) and integrations such as Zoho.
 - Launching the public API. The API is planned; the services are shaped for it.
@@ -82,9 +82,8 @@ The adapter's own step (for MPGS, "waiting for the authentication result") lives
 
 | Reason | Who decided |
 |---|---|
-| `superseded` | The system: another attempt on the same intent succeeded, so this one can never pay. Set in the same transaction as the success. |
 | `merchant_canceled` | The merchant, billing or the API canceled the session or intent. |
-| `customer_canceled` | The customer chose to stop or switch method. |
+| `customer_canceled` | The customer chose to stop, switch method, or take over from another window (5.4). |
 
 `payment_method_type` (`card`, `apple_pay`) is the kind of method an attempt uses, as in Stripe. The name `payment_method` is kept free for the saved cards and wallets that come later (a `payment_methods` table, and a `payment_method_id` on attempts saying which one was used).
 
@@ -125,7 +124,8 @@ Naming: columns of the `gateways` table are not prefixed (`gateways.type`, `gate
 
 ### Rules the database enforces
 
-- At most one attempt per intent can be `capturing` or `succeeded` (`idx_payment_attempts_one_capture_per_intent`). This is what makes double charges impossible.
+- At most one active attempt per intent (`created`, `requires_action`, `processing` or `capturing`), as in Stripe: an intent has one try at a time (`idx_payment_attempts_one_active_per_intent`).
+- At most one attempt per intent can be `capturing` or `succeeded` (`idx_payment_attempts_one_capture_per_intent`). With one active attempt this already follows, but it stays as a cheap safety net against double charges.
 - One active gateway per account and environment (until routing exists), and only a verified gateway (capabilities checked) can be active.
 - Currencies are three uppercase letters.
 - An attempt has no amount of its own: it always charges its intent's amount and currency, so the two can never disagree.
@@ -179,7 +179,7 @@ Naming: columns of the `gateways` table are not prefixed (`gateways.type`, `gate
 4. Still inside ContinueAttempt, once authentication succeeded (no extra browser round trip):
    transition → capturing, committed before the call (locks the intent, and the link if any, and checks its limit)
    adapter.Capture: MPGS PAY with the deterministic transaction id capture
-   transition → succeeded: intent succeeded, session complete, other open attempts canceled (superseded)
+   transition → succeeded: intent succeeded, session complete
 ```
 
 ### 5.2 Unknown capture
@@ -215,7 +215,12 @@ Under the lock on the link, only one transaction counts at a time. If the count 
 
 ### 5.4 Two tabs on one session
 
-Both tabs can create attempts and even complete 3DS. Only one can enter `capturing`. The other sees "being processed in another tab" or "already paid", and its attempt becomes `canceled` with reason `superseded`.
+An intent has one active attempt at a time. When tab B tries to pay while tab A's attempt is active, the database refuses the new attempt and tab B shows "A payment is already in progress in another window", with two choices:
+
+- Wait: the page follows the session and shows the result when A's attempt ends.
+- Pay here instead: A's attempt is canceled (`customer_canceled`), then B starts its own. Refused while A's attempt is `capturing`, because money is moving; B shows "Confirming your payment..." until it resolves.
+
+Whoever holds the session URL can take over, so someone with a shared URL could keep interrupting another person's attempt. That is griefing, not a way to move money wrongly (5.6.1); session URLs are meant for one payer.
 
 ### 5.5 Canceling
 
@@ -232,7 +237,7 @@ Canceling is refused while an attempt is `capturing` or after one `succeeded`: a
 
 ### 5.6.1 Who can act on a session
 
-The session URL (`/c/cs_...`) is the key, as with Stripe Checkout. Anyone who has it can see the merchant, amount and description, pay it, see a 3-D Secure challenge without being able to pass it, trigger a continue (which only re-reads the result from the gateway) or cancel an in-progress attempt (minor griefing; the customer retries). None of this can move money wrongly: the gateway and the database decide every outcome.
+The session URL (`/c/cs_...`) is the key, as with Stripe Checkout. Anyone who has it can see the merchant, amount and description, pay it, see a 3-D Secure challenge without being able to pass it, trigger a continue (which only re-reads the result from the gateway) or take over an in-progress attempt that is not capturing (minor griefing; the customer retries). None of this can move money wrongly: the gateway and the database decide every outcome.
 
 Attempts are not tied to the browser that started them. The 3-D Secure return happens inside the bank's iframe, where browsers often block cookies, so a cookie-bound attempt secret would break real payments, and a token in the URL would end up in logs. Custom UIs built on the API later get a per-intent client secret.
 
@@ -280,7 +285,7 @@ Any client, our hosted checkout or a merchant's own UI, builds on the same contr
 A `complete` session shows "Paid"; an `expired` or `canceled` session explains why and shows no form.
 
 - While the attempt is `created`, `processing`, `requires_action` or `capturing`, the page polls `GetAttempt` every two seconds and switches screens when the status changes. Streaming can replace polling later.
-- Creating an attempt never cancels other open attempts: with two tabs, or two people sharing a session URL, each would cancel the other's payment. The only automatic cancel is `superseded`, when another attempt succeeds. `customer_canceled` is set only when a client calls `CancelAttempt` for its own attempt, the one in its URL: the cancel button, or switching method in the same tab, which cancels the current attempt before starting the new one. A closed tab's attempt simply expires.
+- Creating an attempt is refused while another attempt on the intent is active, unless the customer takes over (5.4). Nothing is canceled automatically. `customer_canceled` is set only when a client cancels: the cancel button, switching method in the same tab (cancel the current attempt, then start the new one), or taking over. A closed tab's attempt simply expires.
 - Each tab has its own attempt. After creating one, the page puts its id in the URL (`/c/cs_...?attempt=att_...`), so a reload resumes exactly that attempt. Without it, the page shows a fresh form and any old open attempt simply expires. Attempt ids are random like session ids, so knowing one grants the same limited powers as the session URL (5.6.1).
 - If the bank's challenge times out while the page is open, the 3-D Secure standard has the bank send a final "not authenticated" answer back through the iframe, so the attempt fails with `authentication_failed` and the page offers a retry. This comes from the 3-D Secure standard, not MPGS's docs; it is on the list to confirm on the sandbox.
 
@@ -381,7 +386,7 @@ Every update query sets `updated_at = NOW()` itself; there are no triggers.
 | `requires_action` | `processing` | the customer came back from the bank | `next_action = NULL` |
 | `requires_action` | `expired` | `expires_at` passed | `next_action = NULL` |
 | `processing` | `capturing` | authenticated | `authentication_method`, `authentication_status`, `eci`, `liability_shift` |
-| `created`, `requires_action`, `processing` | `canceled` | superseded, merchant or customer | `cancellation_reason`, `next_action = NULL` |
+| `created`, `requires_action`, `processing` | `canceled` | the merchant or the customer | `cancellation_reason`, `next_action = NULL` |
 | `capturing` | `succeeded` | approved | |
 | `capturing` | `failed` | a definite decline, or reconcile found nothing at the gateway | `failure_code` |
 | `succeeded`, `failed`, `expired`, `canceled` | none | final | |
@@ -391,19 +396,17 @@ Every update query sets `updated_at = NOW()` itself; there are no triggers.
 **Side effects in the same transaction:**
 
 - Into `capturing`: if the session came from a link, lock the link and count its payments; if it has reached its limit, refuse before any money moves.
-- Into `capturing`: other open attempts are not canceled. They are only blocked from capturing by the one-capture index, because the capture may still fail and they remain a valid second chance.
-- Into `succeeded`: the intent becomes `succeeded` (`succeeded_at`), the session `complete` (`completed_at`), and every other open attempt on the intent `canceled` with reason `superseded`.
-- After every move, the intent's status is recomputed from all its attempts. The most advanced attempt decides: `succeeded` if one succeeded, otherwise `processing` if any is processing or capturing, otherwise `requires_action` if any requires action, otherwise `requires_payment_method`. Only `succeeded` and `canceled` are decisions about the intent itself; the statuses in between summarize how far its furthest attempt is. Because `transition` locks the intent row first, two attempts moving at once are applied one after the other, and each recomputation sees the other's result.
+- Into `succeeded`: the intent becomes `succeeded` (`succeeded_at`) and the session `complete` (`completed_at`). There are no other open attempts to cancel.
+- After every move, the intent's status follows its one active attempt. This is Stripe's model ([PaymentIntent lifecycle](https://docs.stripe.com/payments/paymentintents/lifecycle)): "If the payment attempt fails (for example, due to a decline), the PaymentIntent's status returns to `requires_payment_method` so that the payment can be retried."
 
-  Two tabs on one intent:
+  | Active attempt | Intent |
+  |---|---|
+  | none (no attempt yet, or the last one failed, expired or was canceled) | `requires_payment_method` |
+  | `created`, `processing`, `capturing` | `processing` |
+  | `requires_action` | `requires_action` |
+  | it `succeeded` | `succeeded` |
 
-  | Moment | Tab A | Tab B | Intent |
-  |---|---|---|---|
-  | A starts 3-D Secure | `requires_action` | | `requires_action` |
-  | B starts, frictionless | `requires_action` | `processing` | `processing` |
-  | B is declined | `requires_action` | `failed` | `requires_action` |
-  | A authenticates and captures | `capturing` | `failed` | `processing` |
-  | A succeeds | `succeeded` | `failed` | `succeeded` |
+  `succeeded` and `canceled` are the intent's own decisions and final; the statuses in between mirror the current attempt. The intent's status is stored because the payments list filters on it, and only `transition` writes it.
 
 **Intent:** derived as above, plus three direct moves:
 
@@ -636,6 +639,8 @@ Capabilities are refreshed by a daily job and by a "refresh" button.
 
 **A stored `paid_count` on links.** A counter updated at capture and decremented on failure. It works, but it is a copy of something the database can count, and the decrement is one more path to get wrong. Chosen instead: count under the link's row lock.
 
+**Parallel attempts per intent.** Several attempts could be open at once (two tabs both in 3-D Secure), and the intent's status would be a summary of them, with a priority rule and a `superseded` cancel when one succeeded. It handled an edge case nobody needs and was more complex than Stripe, whose intent has one try at a time. Chosen instead: one active attempt per intent, enforced by a unique index, with an explicit take-over for a second window.
+
 **Two products for links** (one-time requests vs reusable links). One table with `max_payments` covers both; "add 5 more uses" is raising the limit.
 
 **Postgres schemas per bounded context.** Visible ownership and database-level permissions, but there is only one real context today and per-test schemas already use `search_path`. Revisit when billing arrives; moving tables is `ALTER TABLE ... SET SCHEMA`.
@@ -682,7 +687,7 @@ None of this is in v1. Each item is additive: new enum values, new tables or new
 - **Routing.** A gateway declares capabilities (card brands and currencies from MPGS's Payment Options Inquiry; Apple Pay and recurring detected by testing), plus a priority. The router filters active gateways by capability, skips unhealthy ones (circuit breaker) and picks by priority. A saved card always goes to the gateway that holds its token. Declines and `unknown` outcomes are never retried on another gateway. Bank splits (a recurring MID, a MID per currency) are several gateways in one account, never several accounts.
 - **Local networks and co-badged cards.** mada works through MPGS as a card brand. Networks that need their own gateway (Benefit, KNET) appear as separate payment methods in the checkout, so the customer's button choice is the routing decision.
 - **More gateway adapters.** STC Pay and BenefitPay (approval in an app or by OTP), redirect-based gateways (Benefit, KNET), BNPL (needs an `authorized` status). Each one adds enum values and an adapter; attempt statuses, `next_action`, `gateway_data` and `payment_method_details` already cover them.
-- **Saved cards and recurring payments.** `payment_methods` (the card, gateway-neutral) → `payment_method_tokens` (one per gateway that stored it) → `agreements` (one per subscription, created by a customer-present payment with 3DS and used by merchant-initiated charges on the same gateway). Attempts gain a `payment_method_id`. `payer_ip` and `payer_user_agent` become nullable for charges without a customer present.
+- **Saved cards and recurring payments.** `payment_methods` (the card, gateway-neutral) → `payment_method_tokens` (one per gateway that stored it) → `mandates` (permission for future charges: one per subscription, created by a customer-present payment with 3-D Secure and used by merchant-initiated charges on the same gateway; the MPGS adapter maps a mandate to an MPGS "agreement"). Saving a card without charging it is a `setup_intents` flow, named after Stripe's SetupIntent: the same state machine style as payment intents, ending in a saved payment method and a mandate. Attempts gain a `payment_method_id`. `payer_ip` and `payer_user_agent` become nullable for charges without a customer present.
 - **Inbound notifications.** A `gateway_notifications` table for callbacks from providers: the raw payload, signature check, the provider's event id (processed once) and processing status. Kept separate from `gateway_requests`, which logs our own calls, because notifications drive transitions and must be processed exactly once; the dashboard shows both in one timeline.
 - **Events and webhooks.** An outbox table written by `transition` in the same transaction, delivered by River workers.
 - **Refunds** as their own table; the intent stays `succeeded`.
