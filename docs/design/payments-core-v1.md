@@ -4,13 +4,7 @@ Status: draft, frozen for final review. New ideas go to section 10, not into v1.
 
 Scope: the `payments` bounded context in khazina, for the v0.1 release.
 
-In short:
-
-- A payment intent is what is owed; it has at most one active attempt at a time, and its status follows that attempt.
-- An attempt is committed as `capturing` before the PAY call, so a timeout or crash never loses track of money that may have moved.
-- Gateway ids are deterministic (the MPGS order is the attempt), so the reconcile job settles any unknown outcome from the attempt alone.
-- Gateway adapters never touch the database; one `transition` function writes every status, under row locks in a fixed order.
-- Checkout sessions and payment links are doors on top of intents; the money rules never depend on them.
+In short: a customer pays through a hosted checkout page; Fidraq talks to the merchant's own bank gateway and never holds money. Each payment has one try at a time, and Fidraq writes down "money may be moving" before asking the bank to charge, so even if a call times out or the server crashes, it can always find out what happened and never charges twice. Everything provider-specific stays inside one adapter per gateway, so adding a new provider doesn't touch the core.
 
 ## 1. Context
 
