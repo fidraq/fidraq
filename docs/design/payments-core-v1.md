@@ -31,9 +31,9 @@ Goals for v1:
 Non-goals for v1 (the core is designed so they are additive later):
 
 - Saved cards, mandates and recurring charges.
-- Refunds.
+- Refunds and voids. Until then merchants use their bank's portal; Fidraq does not see those, so a refunded or voided payment still shows as succeeded.
 - Billing (invoices, subscriptions) and integrations such as Zoho.
-- Launching the public API. The API is planned; the services are shaped for it.
+- Secret API keys for merchants' servers. The Connect endpoints are live in v0.1 for the checkout and the dashboard; API keys, public docs and the promise not to break them come later.
 - Routing between several gateways.
 - Payment links with a limited number of payments (section 10).
 
@@ -381,6 +381,7 @@ type Step struct {
 - Adapters never touch the database. They make their HTTP calls and return a step; the service applies it through `transition`.
 - Adapters are plain calls. The earlier design returned prepared commands (thunks) so the service could log each call and save its transaction id before sending. Both reasons are gone: the HTTP transport logs every call, and ids are deterministic or searchable (5.2).
 - Before `Capture`, the service commits the attempt as `capturing`. No database transaction is ever held open across a gateway call; a 30-second call would hold row locks for 30 seconds.
+- A step with status `capturing` means "ready to charge". Whichever call returned it (`Start` for frictionless 3-D Secure or Apple Pay, `Continue` after a challenge), the core runs the same internal capture: `transition` to `capturing`, then `adapter.Capture`, then `transition` to the result. An adapter never sends a money call from `Start` or `Continue`. Methods with no customer step in between, like Apple Pay, never call `Continue`.
 - Only the call whose move to `capturing` won may call `Capture`. The row lock lets exactly one win, so a second return POST finds the attempt already `capturing` and only reads it.
 - `Capture` runs with `context.WithoutCancel`, so a customer closing the tab never aborts a PAY in flight. A crash during the call is covered by reconcile (5.2).
 
@@ -471,8 +472,8 @@ Our own stable codes, part of the public API: few, snake_case, and only ever add
 - The public API is ConnectRPC: plain HTTP with JSON (callable with curl), plus gRPC and gRPC-Web from the same handlers. Protos are the single source of truth for the server, the TypeScript and Go clients, and the docs.
 - Protos live in `fidraq.payments.v1`, with one service per resource: `PaymentIntentService`, `CheckoutSessionService`, `PaymentLinkService`. They carry `google.api.http` annotations from the start (for example `get: "/v1/payment_intents/{id}"`), which keeps the design resource-oriented.
 - Later, Vanguard serves the same handlers as REST from those annotations, and an OpenAPI spec is generated from the protos. Secret API keys, rate limits, `buf breaking` in CI and the public docs come with the launch, after v0.1.
-- Until launch the protos are internal and may change.
-- The hosted checkout is a client of the same services, like a merchant's own UI would be. Its small script calls the Connect endpoints with plain `fetch`, using the session id from the URL, which can only touch its own session (5.10).
+- The Connect endpoints are live in v0.1 for two callers: the checkout (by session id) and the dashboard (by login). The launch adds secret API keys for merchants' servers on the same endpoints, plus public docs and the promise not to break them. Until then the protos may change.
+- The hosted checkout is a client of the same services, like a merchant's own UI would be. Its small script calls the Connect endpoints with plain `fetch`, using the session id from the URL, which can only touch its own session (5.10). The script calls the API on its own domain (`CHECKOUT_URL`), so Fidraq sends no CORS headers, and browsers block other websites' scripts from calling it. Anyone can still call it outside a browser; the session id's limited powers are what keep that safe.
 - Checkout pages live on one domain set by `CHECKOUT_URL` (for example `checkout.fidraq.com`), at `/c/cs_...` and `/l/plink_...`. The old per-merchant custom domains (the tenant-by-host middleware) are removed in v1. Because sessions and links are found by their global ids, custom domains can return later as a mapping from host to account, without changing URLs or ids; the README no longer advertises them.
 - Session and attempt ids are keys (5.10), which only works because they are random UUIDs (version 4, from `gen_random_uuid()`). They must never become time-ordered UUIDs (version 7), which would make URLs guessable.
 - Public ids are a prefix plus the UUID encoded in base62 (22 characters), for example `pi_7n42DGM5Tflk9n8mt7Fhc7`: `pi_` (intents), `cs_` (sessions), `plink_` (links), `att_` (attempts). The database stores plain UUIDs; encoding and decoding happen only at the edges. They are fixed before checkout URLs ship, because URLs cannot change afterwards.
@@ -693,6 +694,7 @@ Accepted, handled by the design:
 - Bank-hosted MPGS instances may not support API version 100; the gateway's verification checks it on connect (6.10).
 - The gateway itself unavailable for a long time: attempts stay `capturing`, reconcile retries with backoff and alerts a person after an hour (6.7).
 - Exact request and response shapes are settled with the protos (rollout step 5).
+- Refunds and voids done in the bank's portal are invisible to Fidraq in v0.1: the payment still shows as succeeded. Refunds in Fidraq (section 10) fix this.
 
 Later, before the feature that needs them:
 
@@ -735,7 +737,7 @@ None of this is in v1. Each item is additive: new enum values, new tables or new
 - **Saved cards and recurring payments.** `payment_methods` (the card, gateway-neutral) → `payment_method_tokens` (one per gateway that stored it) → `mandates` (permission for future charges: one per subscription, created by a customer-present payment with 3-D Secure and used by merchant-initiated charges on the same gateway; the MPGS adapter maps a mandate to an MPGS "agreement"). Saving a card without charging it is a `setup_intents` flow, named after Stripe's SetupIntent: the same state machine style as payment intents, ending in a saved payment method and a mandate. Attempts gain `payment_method_id`, and `mandate_id` for charges made without the customer present; intents gain `setup_future_usage` for a "save this card" checkbox during a payment. `payer_ip` and `payer_user_agent` become nullable for charges without a customer present.
 - **Inbound notifications.** A `gateway_notifications` table for callbacks from providers: the raw payload, signature check, the provider's event id (processed once) and processing status. Kept separate from `gateway_requests`, which logs our own calls, because notifications drive transitions and must be processed exactly once; the dashboard shows both in one timeline.
 - **Events and webhooks.** An outbox table written by `transition` in the same transaction, delivered by River workers.
-- **Refunds** as their own table; the intent stays `succeeded`.
+- **Refunds and voids** as one `refunds` table; the intent stays `succeeded`. The merchant only asks for a refund, and the adapter picks how: a void before the payment settles (cheaper, and the charge disappears from the customer's statement), otherwise a refund. Stripe works the same way: "Refunds issued shortly after the original charge appear in the form of a reversal instead of a refund" ([Refunds](https://docs.stripe.com/refunds)). MPGS: "Typically voids will only be successful when processed not long after the original transaction" ([Void](https://credimax.gateway.mastercard.com/api/documentation/apiDocumentation/rest-json/version/100/operation/Transaction%3a%20%20Void.html)). Same safety as capture: deterministic transaction ids, the state written before the call, reconcile for unknown outcomes, and never a refund after a void whose outcome is unknown.
 - **API niceties.** `metadata` on intents, sessions and links; `success_url` and `return_url` on sessions; a "customer chooses the amount" link.
 - **Billing** as its own context: plans, subscriptions, invoices and dunning, calling payments under the rules in 6.5. Invoices in Saudi Arabia must be ZATCA-compliant, so issuing them stays with Zoho or a properly integrated billing module.
 - **Postgres schemas per context**, once there are two real contexts, moved with `ALTER TABLE ... SET SCHEMA`.
