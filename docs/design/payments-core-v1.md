@@ -158,14 +158,14 @@ sequenceDiagram
     F->>M: Create Session (adapter.Prepare)
     F-->>B: Card form with MPGS hosted fields
     B->>M: Card details, typed into hosted fields
-    B->>F: CreateAttempt (MPGS session id, idempotency key)
+    B->>F: CreateAttempt (intent id, card token, browser details, idempotency key)
     F->>M: Retrieve session (brand, last 4)
     Note over F: insert attempt (created)
     F->>M: INITIATE_AUTHENTICATION, AUTHENTICATE_PAYER (adapter.Start)
     F-->>B: requires_action: 3-D Secure challenge
     B->>I: Challenge
     I-->>B: Done
-    B->>F: POST return URL (through MPGS), runs ContinueAttempt
+    B->>F: POST return URL (through MPGS), runs ContinueAttempt (attempt id)
     F->>M: Retrieve the authentication result (adapter.Continue)
     Note over F: transition to capturing, committed before the call
     F->>M: PAY, transaction capture (adapter.Capture)
@@ -175,11 +175,11 @@ sequenceDiagram
 ```
 
 1. `GET /c/cs_x`. `CheckoutSessionService.Get` returns the checkout view: merchant name, amount, description, and the methods to offer. Methods come from the active gateway's capabilities (stored in `gateways.capabilities`) filtered by the session's currency. For each method, the adapter's `Prepare` returns what the page needs to render it (for cards: an MPGS session id and the hosted fields script URL). The MPGS call is logged in `gateway_requests`, tagged with the intent. The page renders the card form and the Apple Pay button. No attempt exists.
-2. The customer types the card into MPGS hosted fields (card data goes to MPGS, never to us) and clicks Pay, which posts the MPGS session id and an idempotency key. `PaymentIntentService.CreateAttempt`:
+2. The customer types the card into MPGS hosted fields (card data goes to MPGS, never to us) and clicks Pay, which calls `CreateAttempt` with the intent id, the card token (for MPGS, the session id), the browser details 3-D Secure needs (screen size, color depth, language, time zone), and an idempotency key. `PaymentIntentService.CreateAttempt`:
    - checks the session is open and the intent is not paid;
    - retrieves the MPGS session from the server: it belongs to this merchant and holds card details (brand, last 4 → `payment_method_details`);
    - inserts the attempt (`created`); the amount comes from the intent, never the browser;
-   - calls `adapter.Start(attempt)`: MPGS `INITIATE_AUTHENTICATION` and `AUTHENTICATE_PAYER` (HTTP calls logged automatically, tagged with the attempt);
+   - calls `adapter.Start(attempt)`: MPGS `INITIATE_AUTHENTICATION`, then `AUTHENTICATE_PAYER` with the browser details, two calls in a row (HTTP calls logged automatically, tagged with the attempt);
    - applies the returned step through `transition`: `gateway_data`, `payment_method_details`, and `requires_action` with `next_action` = 3-D Secure challenge. With frictionless 3-D Secure there is no challenge: the step is `processing` with the result, and `CreateAttempt` goes on to step 4 itself.
 3. The browser renders the challenge. When the customer finishes, the bank's page posts back (through MPGS) to our return URL, which we give MPGS as `authentication.redirectResponseUrl`: `POST {CHECKOUT_URL}/c/cs_x/attempts/att_y/return`. The endpoint needs no other authentication: it only triggers a fresh read of the result from the gateway, so a forged call cannot change any outcome (5.10). It replies with a tiny page that tells the checkout to refresh the attempt. `PaymentIntentService.ContinueAttempt` → `adapter.Continue` (reads the authentication result) → `transition` → `processing`.
 4. Still inside `ContinueAttempt`, once authentication succeeded (no extra browser round trip): `transition` → `capturing`, committed before the call (under the locks in 6.3); `adapter.Capture`: MPGS `PAY` with the deterministic transaction id `capture`; `transition` → `succeeded`: intent succeeded, session complete.
@@ -296,7 +296,7 @@ A `complete` session shows "Paid"; an `expired` or `canceled` session explains w
 
 ### 5.10 Who can act on a session
 
-The session URL (`/c/cs_...`) is the key, as with Stripe Checkout. Anyone who has it can see the merchant, amount and description, pay it, see a 3-D Secure challenge without being able to pass it, trigger a continue (which only re-reads the result from the gateway) or take over an in-progress attempt that is not capturing (minor griefing; the customer retries). None of this can move money wrongly: the gateway and the database decide every outcome.
+The session URL (`/c/cs_...`) is the key, as with Stripe Checkout. Anyone who has it can see the merchant, amount and description, pay it, see a 3-D Secure challenge without being able to pass it, trigger a continue (which only re-reads the result from the gateway) or take over an in-progress attempt that is not capturing (minor griefing; the customer retries). None of this can move money wrongly: the gateway and the database decide every outcome. A session id acts only on its own intent and that intent's attempts, never on any other.
 
 Attempts are not tied to the browser that started them. The 3-D Secure return happens inside the bank's iframe, where browsers often block cookies, so a cookie-bound attempt secret would break real payments. The session id and the attempt id in the URL are the keys instead. URLs end up in logs, which is accepted because each id grants only the limited powers above. A stronger secret never goes in a URL: custom UIs built on the API later get a per-intent client secret, passed to their page in code.
 
@@ -342,20 +342,44 @@ type PaymentLinkService interface {
 }
 ```
 
-These are Go interfaces with plain Go request and response types. The protos come later and follow the same request/response shape, one RPC per method of the three public services; `PaymentJobs` has no RPC. `GatewayService` (6.10) is a dashboard-only Connect service for now; it may join the public API later, for headless setups. Exact fields are settled while writing the protos.
+These are Go interfaces with plain Go request and response types, internal and free to change. The protos (6.4) are the public contract: once launched they change only by adding. Handlers map between the two, as `transport/dashboard/*/mappers.go` does today. `PaymentJobs` has no RPC. `GatewayService` (6.10) is a dashboard-only Connect service for now; it may join the public API later, for headless setups. Exact fields are settled while writing the protos.
 
-Every call has a caller, and each method says who may make it:
+Every call has a caller. The transport turns the request's credential into a `Caller` (6.4), a closed set of types the services switch on:
 
-| Caller | Identified by | May call |
-|---|---|---|
-| Merchant | a dashboard login (later also an API key) | everything for its own account, except the customer's attempt calls below |
-| Customer, holding a session | the session id in the URL (5.10) | `CheckoutSessionService.Get`, and `CreateAttempt`, `GetAttempt`, `ContinueAttempt`, `CancelAttempt` on that session's intent |
-| Anyone with a link | the link id in the URL | `PaymentLinkService.Get` (the public page) and `Open` |
-| River jobs | running inside the server | `PaymentJobs` |
+```go
+type Caller interface{ isCaller() }
+
+type Customer struct{ SessionID uuid.UUID } // the checkout, holding a session
+type User     struct{ UserID uuid.UUID }    // a dashboard login
+type APIKey   struct{ AccountID uuid.UUID } // a merchant's server (later)
+type Job      struct{ Name string }         // River
+```
+
+The interceptor puts it in the request context; services read it with `CallerFrom(ctx)`, as the dashboard's interceptor already does with the user id. A `User` is a person who may belong to several accounts; an `APIKey` belongs to one.
+
+| Caller | May call |
+|---|---|
+| `Customer` | `CheckoutSessionService.Get`, and `CreateAttempt`, `GetAttempt`, `ContinueAttempt`, `CancelAttempt` on that session's intent |
+| `User`, `APIKey` | everything for their account, except the customer's attempt calls above |
+| `Job` | `PaymentJobs` |
+| none | the link page: `PaymentLinkService.Get` and `Open`, by the link id in the URL |
 
 `CancelAttempt` is the customer's button only; merchants cancel intents and sessions (5.5).
 
-The hosted checkout uses these services the way a merchant's own UI would: no private methods exist for it.
+Every door method checks access once, after loading the row, in one function:
+
+```go
+func canAccess(ctx context.Context, caller Caller, row Owned) error {
+    switch c := caller.(type) {
+    case Customer: // the session owns this intent
+    case User:     // a member of the organization that owns the row's account
+    case APIKey:   // the key's account is the row's account
+    case Job:      return nil
+    }
+}
+```
+
+A row the caller may not touch is `ErrNotFound`, so nothing leaks. For a `User`, the membership check is part of the query that loads the row (`AND account_id IN (SELECT a.id FROM accounts a JOIN organization_members m ON m.organization_id = a.organization_id WHERE m.user_id = $2)`), so it costs no extra round trip, and a removed member loses access at once. The core (`transition`, `capture`, adapters) never sees a caller.
 
 ### 6.2 Gateway adapter
 
@@ -469,15 +493,57 @@ Our own stable codes, part of the public API: few, snake_case, and only ever add
 
 ### 6.4 Public API
 
-- The public API is ConnectRPC: plain HTTP with JSON (callable with curl), plus gRPC and gRPC-Web from the same handlers. Protos are the single source of truth for the server, the TypeScript and Go clients, and the docs.
-- Protos live in `fidraq.payments.v1`, with one service per resource: `PaymentIntentService`, `CheckoutSessionService`, `PaymentLinkService`. They carry `google.api.http` annotations from the start (for example `get: "/v1/payment_intents/{id}"`), which keeps the design resource-oriented.
-- Later, Vanguard serves the same handlers as REST from those annotations, and an OpenAPI spec is generated from the protos. Secret API keys, rate limits, `buf breaking` in CI and the public docs come with the launch, after v0.1.
-- The Connect endpoints are live in v0.1 for two callers: the checkout (by session id) and the dashboard (by login). The launch adds secret API keys for merchants' servers on the same endpoints, plus public docs and the promise not to break them. Until then the protos may change.
-- The hosted checkout is a client of the same services, like a merchant's own UI would be. Its small script calls the Connect endpoints with plain `fetch`, using the session id from the URL, which can only touch its own session (5.10). The script calls the API on its own domain (`CHECKOUT_URL`), so Fidraq sends no CORS headers, and browsers block other websites' scripts from calling it. Anyone can still call it outside a browser; the session id's limited powers are what keep that safe.
+- The public API is ConnectRPC: plain HTTP with JSON (callable with curl), plus gRPC and gRPC-Web from the same handlers. Every call is a `POST` to `/<package>.<Service>/<Method>` with the whole request message in the body ([Connect protocol](https://connectrpc.com/docs/protocol/)), so ids travel in the body, not the URL. Protos are the single source of truth for the server, the TypeScript and Go clients, and the docs.
+- The API is split by who calls it, so each part accepts only its own credentials:
+
+  | Namespace | Called by | Credential | Contents |
+  |---|---|---|---|
+  | `fidraq.checkout.v1` | the hosted checkout; custom UIs later | session id; an intent client secret later | the checkout view, and creating, reading, continuing and canceling attempts |
+  | `fidraq.payments.v1` | the dashboard; merchants' servers later | dashboard login; API key later | intents, sessions, links: create, read, list, cancel |
+  | `fidraq.dashboard.*` | the dashboard only | dashboard login | login, workspaces, projects. Private: may change at any time. |
+
+  The dashboard uses the same payments API that merchants' servers will, so the two can never drift apart. A read both sides need (an intent) is two thin handlers on the same door.
+- The services carry `google.api.http` annotations from the start (for example `get: "/v1/payment_intents/{id}"`), which keeps the design resource-oriented. Connect ignores them; later, [Vanguard](https://github.com/connectrpc/vanguard-go) serves the same handlers as REST from them, and an OpenAPI spec is generated from the protos. Secret API keys, rate limits, `buf breaking` in CI and the public docs come with the launch, after v0.1. Until then the protos may change.
+- Every credential is a bearer token ([RFC 6750](https://www.rfc-editor.org/rfc/rfc6750#section-1.2): "any party in possession of the token ... can use the token") in `Authorization: Bearer <token>`. Its shape says what it is: `cs_...` is a session (a `Customer`), a JWT is a dashboard login (a `User`, as today), and later `sk_...` is an API key (an `APIKey`; only its hash is stored, and it is looked up by that hash). Prefixes make tokens identifiable, which also lets secret scanners catch leaked keys ([GitHub](https://github.blog/engineering/platform-security/behind-githubs-new-authentication-token-formats/)). Credentials never go in request messages.
+- Each API has its own interceptor. It checks only that the credential is real (a signature, or a lookup) and builds the `Caller` (6.1); whether that caller may touch a row is decided in payments, which owns the rows.
+- The hosted checkout is a client of the checkout API, as custom UIs will be. Its small script reads the session id from its URL and sends it as the bearer token:
+
+  ```
+  POST /fidraq.checkout.v1.CheckoutService/CreateAttempt
+  Authorization: Bearer cs_7n42DGM5Tflk9n8mt7Fhc7
+  {"paymentIntentId": "pi_...", "idempotencyKey": "k1", "card": {"token": "SESSION0002..."}, "browser": {...}}
+  ```
+
+  The script calls the API on its own domain (`CHECKOUT_URL`), so Fidraq sends no CORS headers, and browsers block other websites' scripts from calling it. Anyone can still call it outside a browser; the session id's limited powers are what keep that safe (5.10). The link page (`/l/plink_...`) needs no credential; it is HTML served by the checkout transport.
+- Attempt requests:
+
+  ```proto
+  message CreateAttemptRequest {
+    string payment_intent_id = 1;
+    string idempotency_key = 2;
+    BrowserDetails browser = 3;   // what 3-D Secure sends the bank: screen size, color depth, language, time zone
+    oneof method {
+      CardInput card = 4;
+      ApplePayInput apple_pay = 5; // v0.1.1
+    }
+  }
+
+  message CardInput {
+    oneof source {
+      string token = 1; // whatever the gateway's card form produced; for MPGS, the session id
+    }
+  }
+
+  message ContinueAttemptRequest {
+    string attempt_id = 1;
+  }
+  ```
+
+  The token is opaque to payments: only the gateway's adapter and its card form understand it, and the core passes it on as `StartInput`. `source` is a `oneof` with one member from the start, so raw card fields can join it if Fidraq is ever PCI DSS certified to receive them, as Stripe's `card` takes either card fields or a token ([PaymentMethod](https://docs.stripe.com/api/payment_methods/create)). Turning a plain field into a `oneof` later would keep the wire format but break generated client code. `ContinueAttempt` carries only the attempt id: the adapter reads the result from the gateway itself.
 - Checkout pages live on one domain set by `CHECKOUT_URL` (for example `checkout.fidraq.com`), at `/c/cs_...` and `/l/plink_...`. The old per-merchant custom domains (the tenant-by-host middleware) are removed in v1. Because sessions and links are found by their global ids, custom domains can return later as a mapping from host to account, without changing URLs or ids; the README no longer advertises them.
 - Session and attempt ids are keys (5.10), which only works because they are random UUIDs (version 4, from `gen_random_uuid()`). They must never become time-ordered UUIDs (version 7), which would make URLs guessable.
 - Public ids are a prefix plus the UUID encoded in base62 (22 characters), for example `pi_7n42DGM5Tflk9n8mt7Fhc7`: `pi_` (intents), `cs_` (sessions), `plink_` (links), `att_` (attempts). The database stores plain UUIDs; encoding and decoding happen only at the edges. They are fixed before checkout URLs ship, because URLs cannot change afterwards.
-- Idempotency keys travel in an `Idempotency-Key` HTTP header; the transport passes the key to the service as a parameter. In v0.1 only attempt creation needs one (from the checkout): a repeated key returns the stored attempt if it is for the same intent and payment method, and `ErrIdempotencyMismatch` otherwise. With the public API, creating intents, sessions and links accepts one too, backed by a request-level `idempotency_keys` table (key, request hash, stored response); calls between contexts (6.5) rely on it.
+- Idempotency keys are a field of the request message, `idempotency_key`, as Google's guidance for protobuf APIs puts them ([AIP-155](https://google.aip.dev/155): "must be provided on the request message to which it applies"), so they appear in generated clients and docs. In v0.1 only attempt creation needs one (from the checkout): a repeated key returns the stored attempt if it is for the same intent and payment method, and `ErrIdempotencyMismatch` otherwise. With the public API, creating intents, sessions and links accepts one too, backed by a request-level `idempotency_keys` table (key, request hash, stored response); calls between contexts (6.5) rely on it.
 - Money in the API is a decimal string plus a currency (`"150.00"`, `"SAR"`). In Go it is always `money.MinorAmount` and `money.Currency`.
 
 ### 6.5 Boundaries
@@ -538,6 +604,18 @@ func New(db *pgxpool.Pool, q *store.Queries, gr GatewayResolver) *Payments {
 - `server/dependencies.go` is the composition root: everything is built there once and handed out. Dependency injection is manual, without a framework.
 - Every door goes through the same core, so transactions and `transition` exist in one place only.
 - Other contexts follow the same shape: `identity.New(...)` with `Auth` and `Organizations`; later `billing.New(...)` with `Invoices`, `Subscriptions` and `Jobs`.
+
+Transport is split by who calls it, one folder per audience, with no business logic:
+
+```
+internal/transport/
+  dashboard/   Connect: fidraq.dashboard.* (login, workspaces, projects). Dashboard login only. As today.
+  payments/    Connect: fidraq.payments.v1. Dashboard login now, API keys later.
+  checkout/    everything the customer touches: fidraq.checkout.v1, the templ pages, the 3-D Secure return URL. Session id.
+  middleware/  shared HTTP plumbing (CORS, logging); not an API.
+```
+
+Each folder's interceptor accepts only its own credentials (6.4), so a session id can never reach a merchant endpoint and a dashboard login never creates attempts.
 
 ### 6.7 MPGS capture mapping
 
