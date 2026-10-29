@@ -1,1 +1,0 @@
-DROP INDEX IF EXISTS idx_one_successful_gateway_operation_pay_per_invoice;

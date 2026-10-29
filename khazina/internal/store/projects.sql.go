@@ -62,7 +62,7 @@ func (q *Queries) GetProjectByCustomDomain(ctx context.Context, customDomain str
 }
 
 const getProjectByPaymentIntentID = `-- name: GetProjectByPaymentIntentID :one
-SELECT p.id, organization_id, name, environment, custom_domain, p.created_at, p.updated_at, p.deleted_at, pi.id, invoice_id, project_id, gateway_account_id, gateway_setup_reference, status, payment_method, payer_ip, payer_user_agent, expires_at, pi.created_at, pi.updated_at, pi.deleted_at, idempotency_key, amount_minor, currency FROM projects p
+SELECT p.id, organization_id, name, environment, custom_domain, p.created_at, p.updated_at, p.deleted_at, pi.id, invoice_id, project_id, gateway_account_id, amount_minor, currency, status, payment_method, gateway_setup_reference, payer_ip, payer_user_agent, idempotency_key, expires_at, pi.created_at, pi.updated_at, pi.deleted_at FROM projects p
 JOIN payment_intents pi ON p.id = pi.project_id
 WHERE pi.id = $1
 `
@@ -80,18 +80,18 @@ type GetProjectByPaymentIntentIDRow struct {
 	InvoiceID             uuid.UUID
 	ProjectID             uuid.UUID
 	GatewayAccountID      uuid.UUID
-	GatewaySetupReference *string
+	AmountMinor           money.MinorAmount
+	Currency              money.Currency
 	Status                PaymentIntentStatus
 	PaymentMethod         PaymentMethod
+	GatewaySetupReference *string
 	PayerIp               string
 	PayerUserAgent        string
+	IdempotencyKey        string
 	ExpiresAt             time.Time
 	CreatedAt_2           time.Time
 	UpdatedAt_2           time.Time
 	DeletedAt_2           *time.Time
-	IdempotencyKey        string
-	AmountMinor           money.MinorAmount
-	Currency              money.Currency
 }
 
 func (q *Queries) GetProjectByPaymentIntentID(ctx context.Context, id uuid.UUID) (GetProjectByPaymentIntentIDRow, error) {
@@ -110,18 +110,18 @@ func (q *Queries) GetProjectByPaymentIntentID(ctx context.Context, id uuid.UUID)
 		&i.InvoiceID,
 		&i.ProjectID,
 		&i.GatewayAccountID,
-		&i.GatewaySetupReference,
+		&i.AmountMinor,
+		&i.Currency,
 		&i.Status,
 		&i.PaymentMethod,
+		&i.GatewaySetupReference,
 		&i.PayerIp,
 		&i.PayerUserAgent,
+		&i.IdempotencyKey,
 		&i.ExpiresAt,
 		&i.CreatedAt_2,
 		&i.UpdatedAt_2,
 		&i.DeletedAt_2,
-		&i.IdempotencyKey,
-		&i.AmountMinor,
-		&i.Currency,
 	)
 	return i, err
 }
